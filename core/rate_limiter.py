@@ -64,6 +64,11 @@ class RateLimiter:
             f"RATE LIMIT ALERT: {reason}. Pausing all LinkedIn actions for {cooldown // 60} minutes."
         )
 
+    def reset(self):
+        """Resets all action counters and cooldowns."""
+        self.state = self._default_state()
+        self._save_state()
+
     def can_perform(self, action_type: str) -> Tuple[bool, str]:
         """
         Validates if action ('likes', 'comments', 'posts') can be performed right now.

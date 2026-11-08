@@ -57,6 +57,14 @@ class LinkedBotAgent:
         self.content_bank = ContentBank()
         self.connector = get_linkedin_connector(active_mode)
 
+    def close(self):
+        """Closes any open browser connectors."""
+        if hasattr(self.connector, "close"):
+            try:
+                self.connector.close()
+            except Exception:
+                pass
+
     def run_engagement_cycle(self):
         """Executes a complete scan & engage run."""
         header = f"🚀 LinkedBot Autonomous Engagement Loop [{self.config.domain.upper()}]"
@@ -373,6 +381,10 @@ def main():
     # Command: run
     run_parser = subparsers.add_parser("run", help="Run autonomous feed scan & engagement loop")
     run_parser.add_argument("--real", action="store_true", help="Use real LinkedIn browser automation")
+    run_parser.add_argument("--reset-limits", action="store_true", help="Reset rate limit counters before running")
+
+    # Command: reset-limits
+    subparsers.add_parser("reset-limits", help="Reset all rate limit counters and cooldowns")
 
     # Command: post
     post_parser = subparsers.add_parser("post", help="Draft and schedule a thought-leadership post")
@@ -413,31 +425,40 @@ def main():
     mode_override = "REAL" if is_real else None
     bot = LinkedBotAgent(override_mode=mode_override)
 
-    if args.command == "login":
-        bot.interactive_login()
-    elif args.command == "run":
-        bot.run_engagement_cycle()
-    elif args.command == "post":
-        bot.publish_or_draft_post(topic=args.topic, from_bank_id=args.from_bank, direct_publish=args.publish)
-    elif args.command == "bank":
-        bot.browse_content_bank()
-    elif args.command == "queue":
-        bot.review_hitl_queue()
-    elif args.command == "status":
-        bot.print_status()
-    elif args.command == "analytics":
-        bot.print_analytics()
-    elif args.command == "schedule":
-        bot.start_schedule(interval_hours=args.interval_hours, max_iterations=args.iterations)
-    elif args.command == "web":
-        import uvicorn
-        print(f"\n🌐 Starting LinkedBot Web Command Center at http://{args.host}:{args.port}")
-        uvicorn.run("web.server:app", host=args.host, port=args.port, reload=False)
-    elif args.command == "test-cooldown":
-        bot.rate_limiter.trigger_rate_limit_backoff("Simulated test 429 trigger")
-        bot.print_status()
-    else:
-        parser.print_help()
+    if getattr(args, "reset_limits", False) or args.command == "reset-limits":
+        bot.rate_limiter.reset()
+        print("🔄 Rate limit quotas and cooldowns have been reset.")
+        if args.command == "reset-limits":
+            return
+
+    try:
+        if args.command == "login":
+            bot.interactive_login()
+        elif args.command == "run":
+            bot.run_engagement_cycle()
+        elif args.command == "post":
+            bot.publish_or_draft_post(topic=args.topic, from_bank_id=args.from_bank, direct_publish=args.publish)
+        elif args.command == "bank":
+            bot.browse_content_bank()
+        elif args.command == "queue":
+            bot.review_hitl_queue()
+        elif args.command == "status":
+            bot.print_status()
+        elif args.command == "analytics":
+            bot.print_analytics()
+        elif args.command == "schedule":
+            bot.start_schedule(interval_hours=args.interval_hours, max_iterations=args.iterations)
+        elif args.command == "web":
+            import uvicorn
+            print(f"\n🌐 Starting LinkedBot Web Command Center at http://{args.host}:{args.port}")
+            uvicorn.run("web.server:app", host=args.host, port=args.port, reload=False)
+        elif args.command == "test-cooldown":
+            bot.rate_limiter.trigger_rate_limit_backoff("Simulated test 429 trigger")
+            bot.print_status()
+        else:
+            parser.print_help()
+    finally:
+        bot.close()
 
 if __name__ == "__main__":
     main()

@@ -24,7 +24,7 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
     Interacts directly with linkedin.com using realistic human behavior,
     DOM selectors, typing jitter, and persistent session storage.
     """
-    def __init__(self, headless: bool = False):
+    def __init__(self, headless: bool = True):
         if not PLAYWRIGHT_AVAILABLE:
             raise RuntimeError("Playwright is not installed. Run 'pip install playwright' and 'playwright install chromium'.")
 
@@ -41,11 +41,10 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
             return
 
         self.playwright = sync_playwright().start()
-        # Launch persistent context to preserve cookies, session, local storage
         self.context = self.playwright.chromium.launch_persistent_context(
             user_data_dir=str(self.user_data_dir),
             headless=self.headless,
-            viewport={"width": 1280, "height": 800},
+            viewport={"width": 1366, "height": 850},
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -71,38 +70,27 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
         self.context = None
         self.playwright = None
 
-    def _human_delay(self, min_sec: float = 2.0, max_sec: float = 5.0):
+    def _human_delay(self, min_sec: float = 2.0, max_sec: float = 4.0):
         """Simulates human reaction time."""
         sleep_dur = round(random.uniform(min_sec, max_sec), 2)
         time.sleep(sleep_dur)
 
-    def _type_human(self, selector: str, text: str):
-        """Types text character by character with organic timing jitter."""
-        self.page.click(selector)
-        for char in text:
-            self.page.keyboard.type(char)
-            # 20ms to 70ms per character jitter
-            time.sleep(random.uniform(0.02, 0.07))
-            if char in [".", "\n", "!"]:
-                time.sleep(random.uniform(0.2, 0.5))
-
     def interactive_login(self) -> bool:
         """
-        Launches a visible browser window allowing the user to log in manually once
-        (handling 2FA, OTP, email verification). Saves session permanently.
+        Launches a visible browser window allowing the user to log in manually once.
+        Saves session permanently in data/linkedin_browser_session.
         """
-        logger.info("Starting interactive login session. Please log in on the browser window...")
+        logger.info("Opening visible LinkedIn login window...")
         self.headless = False
         self._ensure_browser()
 
         self.page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded")
         print("\n" + "="*60)
         print("🔑 ACTION REQUIRED: LinkedIn Login Window Opened")
-        print("Please log into your real LinkedIn account in the browser.")
-        print("The agent will automatically detect when you reach the feed.")
+        print("Please log into your real LinkedIn account in the browser window.")
+        print("LinkedBot will automatically detect when you reach the feed.")
         print("="*60 + "\n")
 
-        # Wait up to 5 minutes for user to reach feed
         start_time = time.time()
         logged_in = False
         while time.time() - start_time < 300:
@@ -113,7 +101,7 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
             time.sleep(2)
 
         if logged_in:
-            print("\n🎉 Login verified! Session stored permanently in 'data/linkedin_browser_session'.")
+            print("\n🎉 Authentication verified! Session permanently stored.")
             self._human_delay(3, 5)
             self.close()
             return True
@@ -123,85 +111,116 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
             return False
 
     def is_logged_in(self) -> bool:
-        """Checks if active session exists without prompt."""
+        """Checks if active session exists on feed."""
         self._ensure_browser()
         try:
             self.page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded")
-            self._human_delay(2, 4)
+            self._human_delay(2, 3)
             return "/feed" in self.page.url
         except Exception:
             return False
 
     def get_feed(self, keywords: List[str], target_profiles: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """
-        Extracts real live posts from the user's authentic LinkedIn feed.
+        Extracts real live posts from the user's authentic LinkedIn feed
+        using modern LinkedIn component and accessibility structures.
         """
         self._ensure_browser()
         posts = []
         try:
-            logger.info("Opening live LinkedIn feed...")
+            logger.info("Navigating to live LinkedIn feed...")
             self.page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded")
-            self._human_delay(3, 6)
+            self._human_delay(3, 5)
 
-            # Check if login required
+            # Check if logged in
             if "/login" in self.page.url or "/checkpoint" in self.page.url:
-                logger.error("Session expired or checkpoint hit. Run 'python main.py login' to re-authenticate.")
+                logger.error("Session expired. Run 'python main.py login' to re-authenticate.")
                 return []
 
-            # Scroll down slowly to load updates
+            # Organic mouse wheel scrolls to trigger lazy loading
             for _ in range(3):
-                self.page.mouse.wheel(0, random.randint(600, 1000))
-                self._human_delay(2, 3)
+                self.page.mouse.wheel(0, random.randint(700, 1100))
+                self._human_delay(1.5, 2.5)
 
-            # Try to click 'see more' buttons on truncated posts
-            see_mores = self.page.query_selector_all("button:has-text('see more'), button:has-text('…see more')")
-            for btn in see_mores[:4]:
-                try:
-                    btn.click(timeout=1000)
-                except Exception:
-                    pass
+            # Execute modern DOM post extraction directly in page context
+            extracted = self.page.evaluate('''() => {
+                const results = [];
+                // Posts in modern LinkedIn are labeled via control buttons:
+                const menuButtons = Array.from(document.querySelectorAll("button[aria-label*='Open control menu for post by']"));
 
-            # Find post containers
-            containers = self.page.query_selector_all("div.feed-shared-update-v2, div[data-urn]")
-            logger.info(f"Detected {len(containers)} real post containers on feed.")
+                for (let i = 0; i < menuButtons.length; i++) {
+                    const btn = menuButtons[i];
+                    const label = btn.getAttribute("aria-label") || "";
+                    const author = label.replace("Open control menu for post by ", "").trim();
 
-            for i, c in enumerate(containers[:10]):
-                try:
-                    # Post URN / ID
-                    urn = c.get_attribute("data-urn") or f"urn:li:feed_item:{i+1}"
+                    // Walk up to find the closest card container with reaction buttons
+                    let container = btn.parentElement;
+                    let foundCard = null;
+                    for (let step = 0; step < 10; step++) {
+                        if (!container) break;
+                        const hasReact = container.querySelector("button[aria-label*='React'], button[aria-label*='Reaction'], button[aria-label='Comment']");
+                        if (hasReact) {
+                            foundCard = container;
+                            break;
+                        }
+                        container = container.parentElement;
+                    }
 
-                    # Author Name
-                    author_elem = c.query_selector(
-                        ".update-components-actor__name, .feed-shared-actor__name, span[dir='ltr'] span"
-                    )
-                    author_name = author_elem.inner_text().strip() if author_elem else "LinkedIn Professional"
+                    if (foundCard) {
+                        // Extract text nodes
+                        const textElements = Array.from(foundCard.querySelectorAll("p, span[dir='ltr']"));
+                        const fullText = textElements.map(el => el.innerText.trim()).filter(txt => txt.length > 20).join("\\n");
 
-                    # Author Headline
-                    headline_elem = c.query_selector(
-                        ".update-components-actor__description, .feed-shared-actor__description, .update-components-actor__sub-description"
-                    )
-                    author_headline = headline_elem.inner_text().strip() if headline_elem else ""
+                        // Extract headline
+                        const spans = Array.from(foundCard.querySelectorAll("span"));
+                        let headline = "";
+                        for (const s of spans) {
+                            const txt = s.innerText.trim();
+                            if (txt.length > 15 && txt.length < 130 && !txt.includes(author) && !txt.includes("follower") && !txt.includes("ago") && !txt.includes("commented") && !txt.includes("like this")) {
+                                headline = txt;
+                                break;
+                            }
+                        }
 
-                    # Post text content
-                    text_elem = c.query_selector(
-                        ".feed-shared-update-v2__description, .update-components-text, div.feed-shared-inline-show-more-text"
-                    )
-                    content = text_elem.inner_text().strip() if text_elem else ""
+                        // Try finding post urn in links
+                        let postUrn = "";
+                        const linkWithUrn = foundCard.querySelector("a[href*='/feed/update/urn:li:activity:']");
+                        if (linkWithUrn) {
+                            const m = linkWithUrn.getAttribute("href").match(/urn:li:activity:[0-9]+/);
+                            if (m) postUrn = m[0];
+                        }
+                        if (!postUrn) {
+                            postUrn = `urn:li:live_post:${i+1}`;
+                        }
 
-                    if content and len(content) > 30:
-                        posts.append({
-                            "post_id": urn,
-                            "author": {
-                                "name": author_name,
-                                "headline": author_headline,
-                                "profile_url": "https://www.linkedin.com"
-                            },
-                            "content": content,
-                            "created_at": time.time(),
-                            "_element_index": i
-                        })
-                except Exception as e:
-                    logger.debug(f"Could not parse container {i}: {e}")
+                        results.push({
+                            post_id: postUrn,
+                            author_name: author,
+                            author_headline: headline,
+                            content: fullText,
+                            index: i
+                        });
+                    }
+                }
+                return results;
+            }''')
+
+            logger.info(f"Successfully extracted {len(extracted)} real posts from your LinkedIn feed.")
+
+            for item in extracted:
+                content = item.get("content", "").strip()
+                if content and len(content) > 30:
+                    posts.append({
+                        "post_id": item.get("post_id"),
+                        "author": {
+                            "name": item.get("author_name"),
+                            "headline": item.get("author_headline") or "Cybersecurity Practitioner",
+                            "profile_url": "https://www.linkedin.com"
+                        },
+                        "content": content,
+                        "created_at": time.time(),
+                        "_menu_index": item.get("index")
+                    })
 
         except Exception as e:
             logger.error(f"Error reading live feed: {e}")
@@ -210,83 +229,125 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
 
     def like_post(self, post_id: str) -> Dict[str, Any]:
         """
-        Locates the real Like button for the post and executes a natural click.
+        Locates the Like/Reaction button on the specified real post and clicks it.
         """
         self._ensure_browser()
         try:
-            logger.info(f"[RealLinkedIn] Locating Like button for {post_id}...")
+            logger.info(f"[RealLinkedIn] Executing Like on {post_id}...")
 
-            # Locate container with matching urn
-            container = self.page.query_selector(f"div[data-urn='{post_id}']")
-            if not container:
-                # Fallback to general containers
-                container = self.page
+            # Locate post container by searching for link with URN or by control button
+            clicked = self.page.evaluate('''(targetId) => {
+                // Try finding by exact urn link
+                let container = null;
+                const link = document.querySelector(`a[href*='${targetId}']`);
+                if (link) {
+                    let cur = link.parentElement;
+                    for (let i = 0; i < 10; i++) {
+                        if (!cur) break;
+                        if (cur.querySelector("button[aria-label*='React'], button[aria-label*='Reaction']")) {
+                            container = cur;
+                            break;
+                        }
+                        cur = cur.parentElement;
+                    }
+                }
 
-            # Find Like button
-            like_button = container.query_selector(
-                "button.react-button__trigger, button[aria-label*='React Like'], button[aria-label*='Like']"
-            )
-            if not like_button:
-                return {"status": "error", "message": "Like button not found"}
+                if (!container) {
+                    // Fallback to first post with reaction button
+                    container = document.querySelector("button[aria-label*='React'], button[aria-label*='Reaction']")?.parentElement?.parentElement;
+                }
 
-            # Check if already liked
-            aria_pressed = like_button.get_attribute("aria-pressed")
-            if aria_pressed == "true":
-                logger.info("Post was already liked. Skipping duplicate click.")
-                return {"status": "success", "message": "Already liked"}
+                if (container) {
+                    const likeBtn = container.querySelector("button[aria-label*='React'], button[aria-label*='Reaction']");
+                    if (likeBtn) {
+                        const isLiked = likeBtn.getAttribute("aria-pressed") === "true";
+                        if (!isLiked) {
+                            likeBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            likeBtn.click();
+                            return { success: true, status: "liked" };
+                        } else {
+                            return { success: true, status: "already_liked" };
+                        }
+                    }
+                }
+                return { success: false, status: "not_found" };
+            }''', post_id)
 
-            # Scroll into view & human click
-            like_button.scroll_into_view_if_needed()
-            self._human_delay(1.5, 3.0)
-            like_button.click()
-            self._human_delay(2.0, 4.0)
-
-            logger.info(f"👍 [REAL ACTION] Successfully liked real LinkedIn post: {post_id}")
-            return {"status": "success", "post_id": post_id}
+            if clicked.get("success"):
+                self._human_delay(2.0, 4.0)
+                logger.info(f"👍 [REAL ACTION] Successfully liked real post: {post_id} ({clicked.get('status')})")
+                return {"status": "success", "post_id": post_id}
+            else:
+                return {"status": "error", "message": "Reaction button not found"}
 
         except Exception as e:
-            logger.error(f"Failed to like post {post_id}: {e}")
+            logger.error(f"Failed to like post: {e}")
             return {"status": "error", "message": str(e)}
 
     def comment_post(self, post_id: str, comment_text: str) -> Dict[str, Any]:
         """
-        Opens comment box, types the substantive comment with keystroke jitter, and submits.
+        Opens the real comment box, types the substantive comment with keystroke jitter, and posts.
         """
         self._ensure_browser()
         try:
-            logger.info(f"[RealLinkedIn] Submitting comment to {post_id}...")
-            container = self.page.query_selector(f"div[data-urn='{post_id}']") or self.page
+            logger.info(f"[RealLinkedIn] Submitting comment to real post {post_id}...")
 
-            # 1. Click Comment button to open box
-            comment_btn = container.query_selector(
-                "button.comment-button, button[aria-label*='Comment'], button.social-actions__button"
-            )
-            if comment_btn:
-                comment_btn.scroll_into_view_if_needed()
-                self._human_delay(1.0, 2.0)
-                comment_btn.click()
-                self._human_delay(1.5, 3.0)
+            # Click the comment button on the card
+            opened = self.page.evaluate('''(targetId) => {
+                let container = null;
+                const link = document.querySelector(`a[href*='${targetId}']`);
+                if (link) {
+                    let cur = link.parentElement;
+                    for (let i = 0; i < 10; i++) {
+                        if (!cur) break;
+                        if (cur.querySelector("button[aria-label='Comment']")) {
+                            container = cur;
+                            break;
+                        }
+                        cur = cur.parentElement;
+                    }
+                }
+                if (!container) {
+                    container = document.querySelector("button[aria-label='Comment']")?.parentElement?.parentElement;
+                }
 
-            # 2. Locate editor
-            editor = container.query_selector(
-                "div.ql-editor[contenteditable='true'], div[role='textbox']"
+                if (container) {
+                    const btn = container.querySelector("button[aria-label='Comment']");
+                    if (btn) {
+                        btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        btn.click();
+                        return true;
+                    }
+                }
+                return false;
+            }''', post_id)
+
+            self._human_delay(2.0, 3.5)
+
+            # Find the active comment box
+            editor = self.page.wait_for_selector(
+                "div.ql-editor[contenteditable='true'], div[role='textbox'], p[data-placeholder*='comment']",
+                timeout=7000
             )
             if not editor:
-                return {"status": "error", "message": "Comment input editor not found"}
+                return {"status": "error", "message": "Comment input editor not opened"}
 
             editor.click()
-            self._human_delay(1.0, 2.0)
+            self._human_delay(0.8, 1.5)
 
-            # 3. Type comment with human keystroke jitter
+            # Type text character by character with organic human jitter
             for char in comment_text:
                 self.page.keyboard.type(char)
-                time.sleep(random.uniform(0.015, 0.05))
+                time.sleep(random.uniform(0.015, 0.045))
+                if char in [".", ",", "!"]:
+                    time.sleep(random.uniform(0.1, 0.25))
 
             self._human_delay(2.0, 4.0)
 
-            # 4. Click Submit
-            submit_btn = container.query_selector(
-                "button.comments-comment-box__submit-button, button:has-text('Post')"
+            # Submit comment
+            submit_btn = self.page.wait_for_selector(
+                "button.comments-comment-box__submit-button, button:has-text('Comment')",
+                timeout=5000
             )
             if submit_btn:
                 submit_btn.click()
@@ -294,10 +355,10 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                 logger.info(f"💬 [REAL ACTION] Published real comment to LinkedIn post {post_id}")
                 return {"status": "success", "comment": comment_text}
             else:
-                return {"status": "error", "message": "Comment submit button not found"}
+                return {"status": "error", "message": "Submit comment button not found"}
 
         except Exception as e:
-            logger.error(f"Failed to comment on {post_id}: {e}")
+            logger.error(f"Failed to post comment: {e}")
             return {"status": "error", "message": str(e)}
 
     def create_post(self, draft_text: str, media_attachment: Optional[str] = None) -> Dict[str, Any]:
@@ -306,13 +367,14 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
         """
         self._ensure_browser()
         try:
-            logger.info("[RealLinkedIn] Navigating to feed to publish post...")
+            logger.info("[RealLinkedIn] Navigating to feed to publish thought leadership post...")
             self.page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded")
             self._human_delay(3.0, 5.0)
 
-            # Click "Start a post"
-            start_post_btn = self.page.query_selector(
-                "button.share-box-feed-entry__trigger, button:has-text('Start a post')"
+            # Click "Start a post" button
+            start_post_btn = self.page.wait_for_selector(
+                "button:has-text('Start a post'), button[aria-label*='Start a post']",
+                timeout=10000
             )
             if not start_post_btn:
                 return {"status": "error", "message": "Could not locate 'Start a post' button"}
@@ -320,9 +382,9 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
             start_post_btn.click()
             self._human_delay(2.0, 3.5)
 
-            # Locate modal editor
+            # Locate modal text editor
             editor = self.page.wait_for_selector(
-                "div.share-creation-state__text-editor div.ql-editor, div.ql-editor[contenteditable='true']",
+                "div.share-creation-state__text-editor div.ql-editor, div.ql-editor[contenteditable='true'], div[role='textbox']",
                 timeout=10000
             )
             if not editor:
@@ -331,7 +393,7 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
             editor.click()
             self._human_delay(1.0, 2.0)
 
-            # Split paragraphs and type with human jitter
+            # Split paragraphs and type with organic human timing
             paragraphs = draft_text.split("\n\n")
             for i, p in enumerate(paragraphs):
                 for char in p:
@@ -340,9 +402,9 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                 if i < len(paragraphs) - 1:
                     self.page.keyboard.press("Enter")
                     self.page.keyboard.press("Enter")
-                    self._human_delay(0.5, 1.2)
+                    self._human_delay(0.5, 1.0)
 
-            self._human_delay(3.0, 6.0)
+            self._human_delay(3.0, 5.0)
 
             # Click final "Post" button
             post_btn = self.page.wait_for_selector(
@@ -351,7 +413,7 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
             )
             if post_btn:
                 post_btn.click()
-                self._human_delay(4.0, 8.0)
+                self._human_delay(4.0, 7.0)
                 logger.info("🎉 [REAL ACTION] Published real thought leadership post to your LinkedIn profile!")
                 return {"status": "success", "message": "Post published"}
             else:

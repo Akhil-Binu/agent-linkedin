@@ -237,6 +237,21 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                             foundCard.setAttribute("data-lb-id", uniqueId);
                         }
 
+                        // Extract permanent activity URN if present
+                        let permUrn = foundCard.getAttribute("data-urn") || foundCard.getAttribute("data-id") || "";
+                        if (!permUrn.includes("urn:li:activity:")) {
+                            const link = foundCard.querySelector("a[href*='/feed/update/urn:li:activity:'], a[href*='urn:li:activity:']");
+                            if (link && link.href) {
+                                const m = link.href.match(/urn:li:activity:\\d+/);
+                                if (m) permUrn = m[0];
+                            }
+                        }
+                        if (permUrn) {
+                            foundCard.setAttribute("data-urn", permUrn);
+                        }
+
+                        const activePostId = permUrn || uniqueId;
+
                         // Extract text nodes
                         const textElements = Array.from(foundCard.querySelectorAll("p, span[dir='ltr']"));
                         const fullText = textElements.map(el => el.innerText.trim()).filter(txt => txt.length > 20).join("\\n");
@@ -253,7 +268,7 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                         }
 
                         results.push({
-                            post_id: uniqueId,
+                            post_id: activePostId,
                             author_name: author,
                             author_headline: headline,
                             content: fullText
@@ -341,7 +356,7 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
         try:
             clicked = self.page.evaluate('''(args) => {
                 const { targetId, reqReaction } = args;
-                const card = document.querySelector(`[data-lb-id='${targetId}']`);
+                const card = document.querySelector(`[data-lb-id='${targetId}'], [data-urn='${targetId}'], [data-id='${targetId}']`);
                 if (!card) {
                     return { success: false, reason: `Card [${targetId}] not found in DOM` };
                 }
@@ -400,7 +415,7 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
 
             # 1. Open or focus Comment editor inside THAT card
             opened = self.page.evaluate('''(targetId) => {
-                const card = document.querySelector(`[data-lb-id='${targetId}']`);
+                const card = document.querySelector(`[data-lb-id='${targetId}'], [data-urn='${targetId}'], [data-id='${targetId}']`);
                 if (!card) return { success: false, reason: `Card [${targetId}] not found in DOM` };
 
                 // Check if editor is already open and visible in this card
@@ -435,7 +450,7 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
             self._human_delay(1.5, 2.5)
 
             # 2. Locate editor strictly inside this card
-            card_locator = self.page.locator(f"[data-lb-id='{post_id}']")
+            card_locator = self.page.locator(f"[data-lb-id='{post_id}'], [data-urn='{post_id}'], [data-id='{post_id}']").first
             editor = card_locator.locator(
                 "div.ProseMirror, div[role='textbox'][contenteditable='true'], div[aria-label*='comment'], div.ql-editor, p.is-editor-empty"
             ).first
@@ -819,8 +834,35 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
         """
         self._ensure_browser()
         try:
+            # 1. Skip simulated or mock IDs in real mode
+            if post_id.startswith("urn:li:post:mock") or post_id.startswith("urn:li:post:10"):
+                logger.info(f"⏭️ [RealLinkedIn] Skipping mock post ID [{post_id}].")
+                return {"status": "skipped", "message": f"Skipped mock post ID [{post_id}]"}
+
             logger.info(f"[RealLinkedIn] Submitting thread reply to card [{post_id}]...")
-            # Click Reply button inside the card or use comment box
+
+            # 2. Check if the card is already in the DOM
+            card_found = self.page.evaluate('''(targetId) => {
+                const el = document.querySelector(`[data-lb-id='${targetId}'], [data-urn='${targetId}'], [data-id='${targetId}']`);
+                return !!el;
+            }''', post_id)
+
+            # 3. If card is not in current DOM, navigate to permalink if it's a real URN
+            if not card_found:
+                if "urn:li:activity:" in post_id or "urn:li:ugcPost:" in post_id:
+                    post_url = f"https://www.linkedin.com/feed/update/{post_id}/"
+                    logger.info(f"🌐 [RealLinkedIn] Card [{post_id}] not in active DOM. Navigating to update permalink: {post_url}...")
+                    self.page.goto(post_url, wait_until="domcontentloaded")
+                    self._human_delay(3.0, 5.0)
+                    self.get_visible_posts()
+                elif post_id.startswith("lb_post_"):
+                    # Ephemeral session card from an earlier session
+                    logger.info(f"ℹ️ [RealLinkedIn] Session card [{post_id}] was from an earlier session and is no longer in the visible DOM. Skipping.")
+                    return {"status": "skipped", "message": f"Card [{post_id}] from prior session not found in active DOM"}
+                else:
+                    logger.warning(f"⚠️ [RealLinkedIn] Card [{post_id}] not found in DOM and has no direct URL to navigate to.")
+                    return {"status": "skipped", "message": f"Card [{post_id}] not found in DOM"}
+
             return self.comment_post(post_id, reply_text)
         except Exception as e:
             logger.error(f"Failed to reply to comment thread on {post_id}: {e}")

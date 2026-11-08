@@ -48,9 +48,14 @@ class AnalyticsTracker:
                     confidence_score REAL,
                     status TEXT,
                     channel TEXT,
+                    mode TEXT DEFAULT 'REAL',
                     timestamp REAL
                 )
             """)
+            try:
+                cursor.execute("ALTER TABLE action_history ADD COLUMN mode TEXT DEFAULT 'REAL'")
+            except Exception:
+                pass
             conn.commit()
         finally:
             conn.close()
@@ -85,14 +90,15 @@ class AnalyticsTracker:
             conn.close()
 
     def record_action(self, action_type: str, target_id: Optional[str],
-                      content: str, confidence: float, status: str = "success", channel: str = "direct"):
+                      content: str, confidence: float, status: str = "success",
+                      channel: str = "direct", mode: str = "REAL"):
         conn = sqlite3.connect(self.db_path)
         try:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO action_history (
-                    action_type, target_id, content, confidence_score, status, channel, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    action_type, target_id, content, confidence_score, status, channel, mode, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 action_type,
                 target_id or "",
@@ -100,6 +106,7 @@ class AnalyticsTracker:
                 confidence,
                 status,
                 channel,
+                mode,
                 time.time()
             ))
             conn.commit()
@@ -156,19 +163,28 @@ class AnalyticsTracker:
         finally:
             conn.close()
 
-    def get_recent_commented_posts(self, limit: int = 15) -> List[Dict[str, Any]]:
+    def get_recent_commented_posts(self, limit: int = 15, mode: Optional[str] = "REAL") -> List[Dict[str, Any]]:
         """Returns recently commented posts for 2-way thread reply tracking."""
         conn = sqlite3.connect(self.db_path)
         try:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT target_id, content, confidence_score, timestamp
+            query = """
+                SELECT target_id, content, confidence_score, timestamp, mode
                 FROM action_history
                 WHERE action_type = 'comments' AND status = 'success'
-                ORDER BY timestamp DESC
-                LIMIT ?
-            """, (limit,))
+            """
+            params: List[Any] = []
+            if mode == "REAL":
+                query += " AND (mode = 'REAL' OR mode IS NULL) AND target_id NOT LIKE 'urn:li:post:mock%' AND target_id NOT LIKE 'urn:li:post:10%'"
+            elif mode:
+                query += " AND mode = ?"
+                params.append(mode)
+
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+
+            cursor.execute(query, tuple(params))
             rows = cursor.fetchall()
             return [dict(r) for r in rows]
         finally:

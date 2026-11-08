@@ -215,18 +215,32 @@ class TestWebEndpoints(unittest.TestCase):
 
 class TestDualTargetEngagementLoop(unittest.TestCase):
     def test_engagement_cycle_achieves_both_targets(self):
+        import tempfile
+        import time
+        from pathlib import Path
         from main import LinkedBotAgent
+        from core.analytics import AnalyticsTracker
+
         bot = LinkedBotAgent(override_mode="MOCK")
+        temp_db = Path(tempfile.gettempdir()) / f"test_dual_{time.time()}.db"
+        bot.analytics = AnalyticsTracker(db_path=temp_db)
         bot.rate_limiter.reset()
 
-        bot.run_engagement_cycle(target_comments=15, target_likes=20, max_scrolls=10)
+        try:
+            bot.run_engagement_cycle(target_comments=15, target_likes=20, max_scrolls=10)
 
-        self.assertGreaterEqual(len(bot.connector.liked_posts), 20)
-        self.assertGreaterEqual(len(bot.connector.comments), 15)
+            self.assertGreaterEqual(len(bot.connector.liked_posts), 20)
+            self.assertGreaterEqual(len(bot.connector.comments), 15)
 
-        for c in bot.connector.comments:
-            comment_text = c["comment_text"]
-            self.assertNotIn("?", comment_text, f"Comment must not contain questions: {comment_text}")
+            for c in bot.connector.comments:
+                comment_text = c["comment_text"]
+                self.assertNotIn("?", comment_text, f"Comment must not contain questions: {comment_text}")
+        finally:
+            if temp_db.exists():
+                try:
+                    temp_db.unlink()
+                except Exception:
+                    pass
 
 class TestAdvancedFeatures(unittest.TestCase):
     def setUp(self):

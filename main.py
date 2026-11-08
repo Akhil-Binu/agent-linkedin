@@ -48,14 +48,14 @@ class LinkedBotAgent:
     """
     def __init__(self, override_mode: Optional[str] = None):
         self.config = load_config()
-        active_mode = override_mode or self.config.linkedin_mode
+        self.active_mode = override_mode or self.config.linkedin_mode
         self.rate_limiter = RateLimiter(self.config.safety.rate_limits)
         self.evaluator = PostEvaluator(self.config)
         self.generator = ContentGenerator(self.config)
         self.hitl = HITLManager(self.config)
         self.analytics = AnalyticsTracker()
         self.content_bank = ContentBank()
-        self.connector = get_linkedin_connector(active_mode)
+        self.connector = get_linkedin_connector(self.active_mode)
 
     def close(self):
         """Closes any open browser connectors."""
@@ -141,7 +141,7 @@ class LinkedBotAgent:
                     res_like = self.connector.like_post(post_id, reaction_type=reaction) if hasattr(self.connector, "like_post") else {}
                     if res_like.get("status") == "success":
                         self.rate_limiter.record_action("likes")
-                        self.analytics.record_action("likes", post_id, f"Reacted on scroll ({reaction})", 90.0)
+                        self.analytics.record_action("likes", post_id, f"Reacted on scroll ({reaction})", 90.0, mode=self.active_mode)
                         likes_executed += 1
                         print(f"   👍 [ACTION] Reacted ({reaction}) on scroll (Total reactions: {likes_executed}/{target_likes})")
                     elif res_like.get("status") == "already_reacted":
@@ -166,7 +166,7 @@ class LinkedBotAgent:
                             if res_c.get("status") == "success":
                                 comments_posted += 1
                                 self.rate_limiter.record_action("comments")
-                                self.analytics.record_action("comments", post_id, comment, confidence)
+                                self.analytics.record_action("comments", post_id, comment, confidence, mode=self.active_mode)
                                 print(f"   🎯 [SUCCESS] Comment published! Progress: [{comments_posted}/{target_comments} comments | {likes_executed}/{target_likes} likes]")
 
                                 # Feature 3: Warm Connection Request Follow-Up
@@ -181,7 +181,7 @@ class LinkedBotAgent:
                                         if res_conn.get("status") == "success":
                                             connections_sent += 1
                                             self.rate_limiter.record_action("connections")
-                                            self.analytics.record_action("connections", author.get("profile_url"), note, 95.0)
+                                            self.analytics.record_action("connections", author.get("profile_url"), note, 95.0, mode=self.active_mode)
                                             print(f"   🤝 [WARM CONNECT] Sent personalized invitation to {author.get('name')}")
                                         else:
                                             print(f"   ℹ️ Connection status: {res_conn.get('message')}")
@@ -417,9 +417,9 @@ class LinkedBotAgent:
         else:
             print(f"\n=== {header} ===\n")
 
-        recent_comments = self.analytics.get_recent_commented_posts(limit=limit)
+        recent_comments = self.analytics.get_recent_commented_posts(limit=limit, mode=self.active_mode)
         if not recent_comments:
-            print("ℹ️ No previously commented posts found in analytics database.")
+            print(f"ℹ️ No previously commented posts found in analytics database for {self.active_mode} mode.")
             return
 
         print(f"📋 Scanning {len(recent_comments)} recently engaged posts for incoming replies...")
@@ -428,6 +428,11 @@ class LinkedBotAgent:
         for entry in recent_comments:
             post_id = entry.get("target_id")
             original_comment = entry.get("content", "")
+
+            # Filter out mock IDs in real mode
+            if self.active_mode == "REAL" and (post_id.startswith("urn:li:post:mock") or post_id.startswith("urn:li:post:10")):
+                logger.info(f"⏭️ Skipping mock test post [{post_id}] in Real LinkedIn mode.")
+                continue
 
             if hasattr(self.connector, "reply_to_comment"):
                 reply_text = self.generator.generate_thread_reply(
@@ -438,8 +443,12 @@ class LinkedBotAgent:
                 res = self.connector.reply_to_comment(post_id, reply_text)
                 if res.get("status") == "success":
                     replies_sent += 1
-                    self.analytics.record_action("thread_reply", post_id, reply_text, 94.0)
+                    self.analytics.record_action("thread_reply", post_id, reply_text, 94.0, mode=self.active_mode)
                     print(f"   💬 [REPLY SENT] Continued dialogue on [{post_id}]:\n      \"{reply_text}\"")
+                elif res.get("status") == "skipped":
+                    print(f"   ℹ️ [SKIPPED] {res.get('message', 'Post skipped.')}")
+                else:
+                    print(f"   ⚠️ Could not reply to [{post_id}]: {res.get('message', 'unknown error')}")
 
         print(f"\n✅ Reply tracking cycle complete: {replies_sent} follow-up replies posted.\n")
 

@@ -19,15 +19,45 @@ class ContentGenerator:
         self.anti_slop = AntiSlopFilter(config.anti_slop)
 
     def _call_llm(self, system_prompt: str, user_prompt: str) -> Optional[str]:
-        """Dispatches prompt to configured LLM provider if API key exists."""
+        """Dispatches prompt to configured LLM provider (Grok, Gemini, OpenAI) with auto-failover."""
         provider = self.config.llm_provider.upper()
-
-        # Check Gemini API
+        grok_key = self.config.grok_api_key or os.getenv("GROK_API_KEY", os.getenv("XAI_API_KEY", ""))
         gemini_key = self.config.gemini_api_key or os.getenv("GEMINI_API_KEY", "")
-        if (provider == "GEMINI" or gemini_key) and gemini_key:
+        openai_key = self.config.openai_api_key or os.getenv("OPENAI_API_KEY", "")
+
+        def _try_grok():
+            if not grok_key:
+                return None
             try:
                 import requests
-                # Use gemini-flash-latest with short timeout
+                headers = {
+                    "Authorization": f"Bearer {grok_key}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": "grok-beta",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "temperature": 0.6
+                }
+                res = requests.post("https://api.x.ai/v1/chat/completions", headers=headers, json=payload, timeout=15)
+                if res.status_code == 200:
+                    text = res.json()["choices"][0]["message"]["content"].strip()
+                    logger.info("Successfully generated contextual comment using Grok (xAI) API.")
+                    return text
+                else:
+                    logger.warning(f"Grok API returned status {res.status_code}: {res.text[:100]}")
+            except Exception as e:
+                logger.warning(f"Grok call failed ({e}).")
+            return None
+
+        def _try_gemini():
+            if not gemini_key:
+                return None
+            try:
+                import requests
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={gemini_key}"
                 payload = {
                     "contents": [{
@@ -48,15 +78,16 @@ class ContentGenerator:
                             logger.info("Successfully generated contextual comment using Gemini API.")
                             return text.strip()
                 elif res.status_code == 429:
-                    logger.warning("Gemini API rate limit reached (Free tier daily limit exceeded). Seamlessly falling back to rule engine.")
+                    logger.warning("Gemini API rate limit reached (Free tier daily limit). Failing over...")
                 else:
                     logger.warning(f"Gemini API returned status {res.status_code}: {res.text[:100]}")
             except Exception as e:
-                logger.warning(f"Gemini call failed or timed out ({e}). Seamlessly falling back to rule engine.")
+                logger.warning(f"Gemini call failed or timed out ({e}).")
+            return None
 
-        # Check OpenAI API
-        openai_key = self.config.openai_api_key or os.getenv("OPENAI_API_KEY", "")
-        if (provider == "OPENAI" or openai_key) and openai_key:
+        def _try_openai():
+            if not openai_key:
+                return None
             try:
                 import requests
                 headers = {
@@ -77,9 +108,16 @@ class ContentGenerator:
                     logger.info("Successfully generated contextual comment using OpenAI API.")
                     return text
             except Exception as e:
-                logger.warning(f"OpenAI call failed ({e}). Falling back to local generation.")
+                logger.warning(f"OpenAI call failed ({e}).")
+            return None
 
-        return None
+        # Call in priority order based on provider setting
+        if provider == "GROK":
+            return _try_grok() or _try_gemini() or _try_openai()
+        elif provider == "OPENAI":
+            return _try_openai() or _try_grok() or _try_gemini()
+        else: # GEMINI or default
+            return _try_gemini() or _try_grok() or _try_openai()
 
     def generate_comment(self, post_content: str, author_profile: Dict[str, Any], suggested_angle: Optional[str] = None) -> Tuple[str, float, list]:
         """

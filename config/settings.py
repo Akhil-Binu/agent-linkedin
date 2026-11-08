@@ -57,6 +57,7 @@ class AppConfig(BaseModel):
     # Runtime and external env variables
     llm_provider: str = Field(default="LOCAL_MOCK")
     gemini_api_key: str = Field(default="")
+    grok_api_key: str = Field(default="")
     openai_api_key: str = Field(default="")
     anthropic_api_key: str = Field(default="")
     linkedin_mode: str = Field(default="MOCK")
@@ -72,6 +73,7 @@ def load_config() -> AppConfig:
     # Bind environment variables
     env_llm = os.getenv("LLM_PROVIDER", "LOCAL_MOCK")
     env_gemini = os.getenv("GEMINI_API_KEY", "")
+    env_grok = os.getenv("GROK_API_KEY", os.getenv("XAI_API_KEY", ""))
     env_openai = os.getenv("OPENAI_API_KEY", "")
     env_anthropic = os.getenv("ANTHROPIC_API_KEY", "")
     env_li_mode = os.getenv("LINKEDIN_MODE", "MOCK")
@@ -91,6 +93,7 @@ def load_config() -> AppConfig:
         safety=SafetyConfig(**data.get("safety", {})),
         llm_provider=env_llm,
         gemini_api_key=env_gemini,
+        grok_api_key=env_grok,
         openai_api_key=env_openai,
         anthropic_api_key=env_anthropic,
         linkedin_mode=env_li_mode,

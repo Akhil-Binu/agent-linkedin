@@ -1,0 +1,97 @@
+domain: "cybersecurity"
+
+niches:
+  - "Cloud Security & IAM (AWS/GCP/Azure, CNAPP, least-privilege)"
+  - "Application Security & DevSecOps (API security, secrets sprawl, dependency supply chain)"
+  - "SecOps & Detection Engineering (alert fatigue, SIEM/SOAR noise, incident response)"
+  - "Identity & Access Management (FIDO2, WebAuthn, AiTM phishing, credential hygiene)"
+  - "AI Security & Red Teaming (prompt injection, model poisoning, agent safety)"
+
+target_keywords:
+  - "cybersecurity"
+  - "infosec"
+  - "cloud security"
+  - "appsec"
+  - "devsecops"
+  - "ciso"
+  - "soc"
+  - "zero trust"
+  - "incident response"
+  - "iam"
+  - "mfa"
+  - "fido2"
+  - "phishing"
+  - "threat intelligence"
+  - "vulnerability"
+  - "exploit"
+  - "detection"
+  - "penetration testing"
+  - "siem"
+
+target_personas:
+  - "Chief Information Security Officer (CISO)"
+  - "VP of Security / Head of Infosec"
+  - "Security Architect / Staff Security Engineer"
+  - "Detection / SecOps Engineer"
+  - "DevSecOps / AppSec Lead"
+  - "Cybersecurity Startup Founder"
+
+anti_slop:
+  banned_phrases:
+    - "in today's fast-paced world"
+    - "in today's digital age"
+    - "in the digital age"
+    - "delve"
+    - "delving"
+    - "testament"
+    - "game-changer"
+    - "game changer"
+    - "here's a hard truth"
+    - "let that sink in"
+    - "revolutionize"
+    - "tapestry"
+    - "beacon"
+    - "paramount"
+    - "pivotal"
+    - "plethora"
+    - "embark"
+    - "it goes without saying"
+    - "buckle up"
+    - "robust shield"
+    - "stay vigilant"
+  generic_comment_praise:
+    - "great post"
+    - "thanks for sharing"
+    - "totally agree"
+    - "100% agree"
+    - "spot on"
+    - "love this"
+    - "well said"
+
+commenting_rules:
+  max_sentences: 3
+  min_sentences: 1
+  required_modes:
+    - "counter_perspective"
+    - "sharp_question"
+    - "concrete_micro_insight"
+  tone: "Conversational, peer-to-peer, technically grounded, zero fluff"
+
+posting_rules:
+  framework:
+    - "Hook"
+    - "Core Insight"
+    - "Example or Data Point"
+    - "Takeaway or Open Question"
+  max_emojis: 2
+  paragraph_style: "Punchy, short paragraphs with clear white space"
+
+safety:
+  rate_limits:
+    max_likes_per_hour: 10
+    max_likes_per_day: 35
+    max_comments_per_hour: 5
+    max_comments_per_day: 15
+    max_posts_per_day: 2
+    backoff_cooldown_seconds: 3600 # 60 minutes on rate limit or API block
+  confidence_threshold_auto_engage: 85 # < 85% routes to HITL approval queue

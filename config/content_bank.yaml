@@ -1,0 +1,92 @@
+posts:
+  - id: "cb_iam_01"
+    sub_domain: "Cloud Security & IAM"
+    topic: "IAM Wildcard Roles & The Illusion of Cloud Perimeters"
+    content: |
+      The cloud perimeter isn't a firewall. It's IAM.
+
+      Most cloud breaches don't happen because an attacker wrote an 0-day exploit against your hypervisor. They happen because an engineer needed quick access at 2 AM, attached AdministratorAccess, and never detached it.
+
+      Over-permissioned service roles are the new open ports of the cloud era.
+
+      A single orphaned CI/CD token with wildcard permissions can turn a minor repository breach into an existential AWS disaster within minutes.
+
+      When was the last time your team ran an automated audit of inactive IAM roles older than 90 days?
+    key_metrics: ["Identity perimeter", "Least-privilege", "Cloud audits"]
+
+  - id: "cb_secops_01"
+    sub_domain: "SecOps & Detection Engineering"
+    topic: "Alert Fatigue and the SIEM Ingestion Vanity Metric"
+    content: |
+      Most teams don't fail security audits because they lack tools.
+
+      They fail because they bought 35 tools that don't talk to each other, generating 12,000 alerts a week that their 4-person SOC silently ignores.
+
+      Tool sprawl creates an illusion of defense-in-depth. In practice, it usually produces alert paralysis.
+
+      A client recently spent six figures on an enterprise CNAPP, only to miss an unauthenticated S3 bucket for three months because the alert was buried on page 14 of an unread dashboard.
+
+      The best security posture isn't the one with the most dashboards. It's the one where your team actually acts on signal within 15 minutes.
+
+      If you had to cut 50% of your security stack tomorrow, which single tool would you refuse to give up?
+    key_metrics: ["SOC efficiency", "Alert fatigue", "Tool sprawl"]
+
+  - id: "cb_appsec_01"
+    sub_domain: "Application Security & DevSecOps"
+    topic: "Why Developer Empathy Beats Shift-Left Platitudes"
+    content: |
+      "Shift Left" failed because security teams treated it as "dump our unfinished backlog onto developers."
+
+      Telling an engineering sprint to fix 400 low-priority CVEs in third-party npm packages when 95% of the vulnerable functions are never called isn't security. It's noise.
+
+      Developers don't ignore security because they don't care. They ignore security when security breaks their deployment pipelines with false positives.
+
+      If your AppSec tooling doesn't prove code reachability before blocking a PR, you aren't shifting security left—you're just slowing shipping down.
+
+      How does your security team verify exploit reachability before paging an engineer?
+    key_metrics: ["Shift Left", "Reachability analysis", "Developer velocity"]
+
+  - id: "cb_auth_01"
+    sub_domain: "Identity & Access Management"
+    topic: "The Slow Death of SMS and Push-Based MFA"
+    content: |
+      Mandating MFA is table stakes. Relying on SMS or push notifications in 2026 is negligent.
+
+      Adversary-in-the-Middle (AiTM) phishing kits like Evilginx are commoditized, open-source, and available to script kiddies for free. They don't guess passwords; they capture valid session tokens post-authentication.
+
+      If your MFA isn't cryptographic and hardware-bound (FIDO2 / WebAuthn / passkeys), an attacker doesn't even need to crack your hash.
+
+      Phishing-resistant authentication isn't an enterprise luxury anymore. It is the only authentication tier that actually withstands modern identity attacks.
+
+      What is currently holding your organization back from deprecating push-notification MFA entirely?
+    key_metrics: ["FIDO2", "AiTM phishing", "WebAuthn"]
+
+  - id: "cb_ai_01"
+    sub_domain: "AI Security & Red Teaming"
+    topic: "Agentic AI and the Unbounded Tool-Calling Risk"
+    content: |
+      Connecting an LLM to internal database APIs and giving it shell access without strict deterministic guardrails is the new SQL injection.
+
+      Indirect prompt injection isn't a theoretical parlor trick. If your autonomous agent reads customer emails or untrusted web data and has permission to execute SQL queries or send webhooks, you have built an arbitrary code execution backdoor.
+
+      System prompts are instructions, not security boundaries. You cannot prompt-engineer your way out of access control vulnerabilities.
+
+      Treat agent outputs with the exact same zero-trust skepticism as unvalidated user input.
+
+      What isolation boundaries are you enforcing between your AI agent runtimes and production datastores?
+    key_metrics: ["Prompt injection", "Agent safety", "Least privilege for AI"]
+
+  - id: "cb_compliance_01"
+    sub_domain: "Governance, Risk & Compliance"
+    topic: "SOC 2 Green Checks vs Production Security"
+    content: |
+      Compliance is not security.
+
+      Passing a SOC 2 audit simply proves you have documented policies and screenshots from last Tuesday. It says nothing about whether an attacker can pivot from your staging cluster into production.
+
+      I have seen organizations pass audits with flying colors while running unpatched domain controllers and hardcoded AWS secrets in public GitHub repos.
+
+      Auditors check boxes; adversaries look for paths of least resistance.
+
+      Treat compliance as the regulatory tax it is, but measure your actual security posture by how quickly you can isolate a compromised identity.
+    key_metrics: ["SOC 2", "Compliance vs Security", "MTTR"]

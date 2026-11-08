@@ -56,3 +56,9 @@ class LinkedInConnectorBase(ABC):
         Posts a contextual follow-up reply in an existing comment thread.
         """
         return {"status": "skipped", "message": "Not implemented"}
+
+    def is_card_visible(self, post_id: str) -> bool:
+        """
+        Checks whether a target post card is currently visible in the active DOM.
+        """
+        return True

@@ -434,6 +434,12 @@ class LinkedBotAgent:
                 logger.info(f"⏭️ Skipping mock test post [{post_id}] in Real LinkedIn mode.")
                 continue
 
+            # Ephemeral session card check in REAL mode: skip before calling LLM
+            if self.active_mode == "REAL" and post_id.startswith("lb_post_"):
+                if hasattr(self.connector, "is_card_visible") and not self.connector.is_card_visible(post_id):
+                    print(f"   ℹ️ [SKIPPED] Card [{post_id}] was from an earlier browser session (not visible in current feed).")
+                    continue
+
             if hasattr(self.connector, "reply_to_comment"):
                 reply_text = self.generator.generate_thread_reply(
                     original_comment=original_comment,

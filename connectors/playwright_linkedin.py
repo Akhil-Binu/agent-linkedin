@@ -828,6 +828,20 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
             logger.error(f"Failed to send connection request to {profile_url}: {e}")
             return {"status": "error", "message": str(e)}
 
+    def is_card_visible(self, post_id: str) -> bool:
+        """
+        Checks whether a target card is currently loaded and visible in the browser DOM.
+        """
+        if not self.page:
+            return False
+        try:
+            return bool(self.page.evaluate('''(targetId) => {
+                const el = document.querySelector(`[data-lb-id='${targetId}'], [data-urn='${targetId}'], [data-id='${targetId}']`);
+                return !!el;
+            }''', post_id))
+        except Exception:
+            return False
+
     def reply_to_comment(self, post_id: str, reply_text: str) -> Dict[str, Any]:
         """
         Submits a contextual reply to an ongoing comment thread inside card [post_id].

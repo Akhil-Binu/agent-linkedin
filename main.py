@@ -420,6 +420,8 @@ class LinkedBotAgent:
         recent_comments = self.analytics.get_recent_commented_posts(limit=limit, mode=self.active_mode)
         if not recent_comments:
             print(f"ℹ️ No previously commented posts found in analytics database for {self.active_mode} mode.")
+            print("💡 Tip: Run Option [1] (Targeted Search & Engagement) or Option [2] (Feed Engagement Loop) first.")
+            print("   LinkedBot will comment on live posts and store their permanent LinkedIn URLs for reply tracking!\n")
             return
 
         print(f"📋 Scanning {len(recent_comments)} recently engaged posts for incoming replies...")

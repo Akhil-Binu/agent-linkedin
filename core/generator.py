@@ -22,11 +22,43 @@ class ContentGenerator:
         """Dispatches prompt to configured LLM provider if API key exists."""
         provider = self.config.llm_provider.upper()
 
-        if provider == "OPENAI" and self.config.openai_api_key:
+        # Check Gemini API
+        gemini_key = self.config.gemini_api_key or os.getenv("GEMINI_API_KEY", "")
+        if (provider == "GEMINI" or gemini_key) and gemini_key:
+            try:
+                import requests
+                # Use gemini-1.5-flash
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+                payload = {
+                    "contents": [{
+                        "parts": [{"text": f"System Instructions: {system_prompt}\n\nTask: {user_prompt}"}]
+                    }],
+                    "generationConfig": {
+                        "temperature": 0.5,
+                        "maxOutputTokens": 200
+                    }
+                }
+                res = requests.post(url, json=payload, timeout=20)
+                if res.status_code == 200:
+                    data = res.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                        if text:
+                            logger.info("Successfully generated contextual comment using Gemini API.")
+                            return text.strip()
+                else:
+                    logger.warning(f"Gemini API returned status {res.status_code}: {res.text[:120]}")
+            except Exception as e:
+                logger.warning(f"Gemini call failed ({e}). Falling back to local generation.")
+
+        # Check OpenAI API
+        openai_key = self.config.openai_api_key or os.getenv("OPENAI_API_KEY", "")
+        if (provider == "OPENAI" or openai_key) and openai_key:
             try:
                 import requests
                 headers = {
-                    "Authorization": f"Bearer {self.config.openai_api_key}",
+                    "Authorization": f"Bearer {openai_key}",
                     "Content-Type": "application/json"
                 }
                 payload = {
@@ -35,78 +67,100 @@ class ContentGenerator:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    "temperature": 0.7
+                    "temperature": 0.6
                 }
-                res = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=30)
+                res = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=20)
                 if res.status_code == 200:
-                    return res.json()["choices"][0]["message"]["content"].strip()
+                    text = res.json()["choices"][0]["message"]["content"].strip()
+                    logger.info("Successfully generated contextual comment using OpenAI API.")
+                    return text
             except Exception as e:
                 logger.warning(f"OpenAI call failed ({e}). Falling back to local generation.")
-
-        elif provider == "GEMINI" and self.config.gemini_api_key:
-            try:
-                import requests
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={self.config.gemini_api_key}"
-                payload = {
-                    "contents": [{
-                        "parts": [{"text": f"{system_prompt}\n\nUser: {user_prompt}"}]
-                    }]
-                }
-                res = requests.post(url, json=payload, timeout=30)
-                if res.status_code == 200:
-                    data = res.json()
-                    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            except Exception as e:
-                logger.warning(f"Gemini call failed ({e}). Falling back to local generation.")
 
         return None
 
     def generate_comment(self, post_content: str, author_profile: Dict[str, Any], suggested_angle: Optional[str] = None) -> Tuple[str, float, list]:
         """
-        Generates a 1-3 sentence value-add comment.
+        Generates a 1-3 sentence value-add comment directly relevant to the post.
         Returns: (comment_text, confidence_score, list_of_violations)
         """
         system_prompt = (
-            "You are a Senior Cybersecurity Practitioner commenting on a peer's LinkedIn post. "
-            "Write 1 to 2 sentences max. "
-            "Do NOT write 'Great post', 'Thanks for sharing', or generic praise. "
-            "Share a counter-perspective, an edge case, or ask a sharp technical question. "
-            "NEVER use corporate buzzwords like 'delve', 'testament', 'game-changer', or 'fast-paced'."
+            "You are an experienced Principal Cybersecurity Engineer commenting on a peer's LinkedIn post. "
+            "CRITICAL INSTRUCTIONS: "
+            "1. You MUST directly and specifically address the EXACT technical topic of the post (e.g. if the post discusses a specific vulnerability, compression flaw, IAM misconfiguration, or SOC metric, focus strictly on that topic). "
+            "2. Write 1 to 2 concise, sharp sentences max. "
+            "3. Add technical substance: offer an edge case, a counter-perspective, or ask a sharp practitioner question. "
+            "4. NEVER use generic praise ('Great post', 'Spot on', 'Thanks for sharing'). "
+            "5. NEVER use AI buzzwords ('delve', 'testament', 'game-changer', 'fast-paced', 'in the digital age', 'crucial')."
         )
-        user_prompt = f"Post: {post_content}\nAuthor: {author_profile.get('headline', '')}\nFocus angle: {suggested_angle or 'Practitioner reality'}"
+        user_prompt = (
+            f"Author: {author_profile.get('name', 'Peer')} ({author_profile.get('headline', '')})\n"
+            f"Post Content:\n\"{post_content}\"\n\n"
+            f"Write a sharp, 1-2 sentence response addressing their exact topic:"
+        )
 
         llm_response = self._call_llm(system_prompt, user_prompt)
         if not llm_response:
-            # Deterministic cybersecurity domain fallback
+            # Deterministic cybersecurity domain fallback with STRICT word boundaries
             lower = post_content.lower()
-            if "mfa" in lower or "iam" in lower or "auth" in lower:
+
+            # 1. Vulnerability / CVE / Exploits / Flaws / Patching
+            if re.search(r'\b(cve|flaw|vulnerability|vulnerabilities|exploit|brotli|rce|shell|zeroday|zero-day|0day|0-day|patch|patching|buffer|overflow)\b', lower):
                 comment = (
-                    "MFA stops credential stuffing, but without WebAuthn/FIDO2 keys, "
-                    "AiTM reverse proxies like Evilginx bypass standard push and SMS in seconds. "
-                    "Are you seeing resistance from leadership when pushing for hardware keys?"
+                    "Vulnerabilities like this highlight the gap between theoretical presence and actual runtime reachability. "
+                    "If a vulnerable library isn't exposed along an active execution path, emergency patching can be a massive distraction. "
+                    "How is your team validating reachability before declaring a code-red drill?"
                 )
-            elif "cloud" in lower or "s3" in lower or "aws" in lower or "gcp" in lower:
+
+            # 2. Identity & Access Management / MFA / FIDO2 / Phishing
+            elif re.search(r'\b(mfa|fido2|webauthn|passkeys?|phishing|authenticator|aitm|credential|passwords?)\b', lower):
                 comment = (
-                    "The challenge isn't discovering cloud misconfigurations; it's that teams get buried under 5,000 low-risk findings. "
-                    "Until security tooling prioritizes by reachability and actual IAM privilege path, developers will keep tuning alerts out."
+                    "Phishing-resistant keys are the only real defense against modern adversary-in-the-middle kits like Evilginx. "
+                    "Standard push and SMS OTP are commoditized targets now. "
+                    "How are your engineering teams approaching hardware-bound FIDO2 rollouts for developer accounts?"
                 )
-            elif "ai" in lower or "llm" in lower:
+
+            # 3. Cloud Security & IAM / AWS / GCP / Azure
+            elif re.search(r'\b(iam|aws|gcp|azure|s3|bucket|least-privilege|permissions|cloud|kubernetes|k8s)\b', lower):
                 comment = (
-                    "Most AI security discussions focus on hypothetical rogue models, but the immediate headache is ungoverned API keys embedded in client-side scripts. "
-                    "How are your teams auditing shadow MCP/agent connections across dev workstations?"
+                    "Over-permissioned service roles remain the quietest escalation vector in cloud infrastructure. "
+                    "Pruning inactive wildcard permissions older than 60 days usually eliminates half the blast radius overnight. "
+                    "Are you running automated IAM role usage audits across your CI/CD pipelines?"
                 )
-            elif "soc" in lower or "siem" in lower or "alert" in lower:
+
+            # 4. SOC / Detection Engineering / SIEM / Alert Fatigue
+            elif re.search(r'\b(soc|siem|soar|alert|fatigue|triage|incident response|detection|edr|xdr)\b', lower):
                 comment = (
-                    "Alert fatigue isn't a staffing issue—it's an engineering debt issue. "
-                    "If a detection rule fires 100 times without yielding a single incident response ticket, that rule belongs in the trash, not a dashboard."
+                    "Alert volume without context is a recipe for analyst burnout. "
+                    "If a detection rule fires 100 times without producing a single actionable ticket, that rule belongs in the trash, not a dashboard. "
+                    "What threshold does your team use to deprecate noisy detection rules?"
                 )
+
+            # 5. Application Security / DevSecOps / Code Security
+            elif re.search(r'\b(appsec|devsecops|sast|dast|dependencies|supply chain|npm|pip|pipeline)\b', lower):
+                comment = (
+                    "The fastest way to lose developer trust is blocking pull requests for low-severity dependency alerts that aren't even invoked in production. "
+                    "How does your security team filter build-time noise before interrupting release velocity?"
+                )
+
+            # 6. AI & LLM Security (Strict word boundary only)
+            elif re.search(r'\b(ai|llm|genai|gpt|rag|prompt injection|agent safety)\b', lower):
+                comment = (
+                    "Treating autonomous AI agent outputs with the same zero-trust skepticism as raw user input is where many architectures fail. "
+                    "What isolation boundaries are you enforcing between your agent runtimes and production datastores?"
+                )
+
+            # 7. General Cybersecurity / Leadership / Architecture
             else:
                 comment = (
-                    "A lot of security tooling promises automated remediation, but in production, breaking business workflows is what gets security teams sidelined. "
-                    "How are you balancing blast radius containment with developer velocity?"
+                    "Bridging theoretical compliance posture with real practitioner operational friction is where the battle is won. "
+                    "How are you measuring mean time to remediate (MTTR) on the ground rather than just audit readiness?"
                 )
         else:
             comment = llm_response.strip().strip('"')
+
+        # Clean up any quotes or whitespace
+        comment = comment.replace("\n", " ").strip()
 
         # Run through tone & anti-slop verification
         is_valid, violations, penalty = self.anti_slop.evaluate_comment_tone(comment)
@@ -131,7 +185,6 @@ class ContentGenerator:
 
         llm_response = self._call_llm(system_prompt, user_prompt)
         if not llm_response:
-            # Deterministic, high-caliber cybersecurity posts based on topic
             lower = topic.lower()
             if "compliance" in lower or "audit" in lower or "soc2" in lower:
                 post = (
@@ -149,21 +202,21 @@ class ContentGenerator:
                     "A single orphaned CI/CD token with wildcard permissions can turn a minor repository breach into an existential AWS disaster within minutes.\n\n"
                     "When was the last time your team ran an automated audit of inactive IAM roles older than 90 days?"
                 )
-            elif "tool" in lower or "sprawl" in lower or "vendor" in lower:
+            elif "vulnerability" in lower or "cve" in lower or "patch" in lower:
+                post = (
+                    "Most patch management policies are theater.\n\n"
+                    "Mandating that every critical CVE must be patched within 72 hours sounds disciplined on paper. In practice, it leads to emergency deploys of unverified code that break production systems.\n\n"
+                    "Without reachability analysis, your team is wasting cycles patching libraries that aren't even imported into execution memory.\n\n"
+                    "Prioritizing by CVSS score alone is a vanity metric. Prioritizing by exploitable attack path is how mature engineering teams actually defend infrastructure.\n\n"
+                    "What percentage of the CVEs your team patched last quarter were actually exposed to untrusted user input?"
+                )
+            else:
                 post = (
                     "Adding another security tool is often worse than adding nothing.\n\n"
                     "Enterprise security teams now manage an average of 45 distinct security tools. Each one comes with its own agent, its own console, and its own stream of high-severity alerts.\n\n"
                     "The result isn't defense-in-depth. It's context-switching paralysis.\n\n"
-                    "The highest-performing security teams I talk with aren't adopting new products every quarter. They are actively deprecating underused tools and mastering telemetry from their core endpoints and identity provider.\n\n"
+                    "The highest-performing security teams aren't adopting new products every quarter. They are actively deprecating underused tools and mastering telemetry from their core endpoints and identity provider.\n\n"
                     "Signal always beats shelfware. What tool in your stack provides the least signal for the noise it makes?"
-                )
-            else:
-                post = (
-                    "Most incident response plans look great in a binder.\n\n"
-                    "Then a real incident hits, and the team realizes the primary on-call engineer's laptop credentials expired, the Slack webhook was broken, and nobody knows who owns the compromised database.\n\n"
-                    "Tabletop exercises aren't just for executives. They exist to uncover the mundane operational friction that destroys your mean time to respond (MTTR).\n\n"
-                    "If your response plan hasn't been tested under simulated chaos in the last six months, you don't have a plan—you have a wish list.\n\n"
-                    "What was the most unexpected operational bottleneck your team discovered during your last drill?"
                 )
         else:
             post = llm_response.strip()

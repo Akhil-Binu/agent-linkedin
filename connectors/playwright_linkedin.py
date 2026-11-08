@@ -21,8 +21,8 @@ SESSION_DIR = DATA_DIR / "linkedin_browser_session"
 class PlaywrightLinkedInConnector(LinkedInConnectorBase):
     """
     Real-world autonomous LinkedIn agent connector using a persistent browser context.
-    Interacts directly with linkedin.com using realistic human behavior,
-    DOM selectors, typing jitter, and persistent session storage.
+    Interacts directly with linkedin.com using strictly scoped card DOM selectors,
+    keystroke jitter, and human delays.
     """
     def __init__(self, headless: bool = True):
         if not PLAYWRIGHT_AVAILABLE:
@@ -123,7 +123,7 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
     def get_feed(self, keywords: List[str], target_profiles: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """
         Extracts real live posts from the user's authentic LinkedIn feed
-        using modern LinkedIn component and accessibility structures.
+        and attaches a unique DOM identifier (`data-lb-id`) to each card.
         """
         self._ensure_browser()
         posts = []
@@ -137,15 +137,14 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                 logger.error("Session expired. Run 'python main.py login' to re-authenticate.")
                 return []
 
-            # Organic mouse wheel scrolls to trigger lazy loading
+            # Organic mouse wheel scrolls to trigger feed updates
             for _ in range(3):
                 self.page.mouse.wheel(0, random.randint(700, 1100))
                 self._human_delay(1.5, 2.5)
 
-            # Execute modern DOM post extraction directly in page context
+            # Execute modern DOM post extraction and tag each card uniquely
             extracted = self.page.evaluate('''() => {
                 const results = [];
-                // Posts in modern LinkedIn are labeled via control buttons:
                 const menuButtons = Array.from(document.querySelectorAll("button[aria-label*='Open control menu for post by']"));
 
                 for (let i = 0; i < menuButtons.length; i++) {
@@ -167,6 +166,10 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                     }
 
                     if (foundCard) {
+                        // Tag this exact card with a persistent identifier
+                        const uniqueId = `lb_post_${i + 1}`;
+                        foundCard.setAttribute("data-lb-id", uniqueId);
+
                         // Extract text nodes
                         const textElements = Array.from(foundCard.querySelectorAll("p, span[dir='ltr']"));
                         const fullText = textElements.map(el => el.innerText.trim()).filter(txt => txt.length > 20).join("\\n");
@@ -182,19 +185,8 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                             }
                         }
 
-                        // Try finding post urn in links
-                        let postUrn = "";
-                        const linkWithUrn = foundCard.querySelector("a[href*='/feed/update/urn:li:activity:']");
-                        if (linkWithUrn) {
-                            const m = linkWithUrn.getAttribute("href").match(/urn:li:activity:[0-9]+/);
-                            if (m) postUrn = m[0];
-                        }
-                        if (!postUrn) {
-                            postUrn = `urn:li:live_post:${i+1}`;
-                        }
-
                         results.push({
-                            post_id: postUrn,
+                            post_id: uniqueId,
                             author_name: author,
                             author_headline: headline,
                             content: fullText,
@@ -229,136 +221,107 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
 
     def like_post(self, post_id: str) -> Dict[str, Any]:
         """
-        Locates the Like/Reaction button on the specified real post and clicks it.
+        Locates the Like button STRICTLY inside the matching post card.
         """
         self._ensure_browser()
         try:
-            logger.info(f"[RealLinkedIn] Executing Like on {post_id}...")
+            logger.info(f"[RealLinkedIn] Locating Like button strictly inside card [{post_id}]...")
 
-            # Locate post container by searching for link with URN or by control button
             clicked = self.page.evaluate('''(targetId) => {
-                // Try finding by exact urn link
-                let container = null;
-                const link = document.querySelector(`a[href*='${targetId}']`);
-                if (link) {
-                    let cur = link.parentElement;
-                    for (let i = 0; i < 10; i++) {
-                        if (!cur) break;
-                        if (cur.querySelector("button[aria-label*='React'], button[aria-label*='Reaction']")) {
-                            container = cur;
-                            break;
-                        }
-                        cur = cur.parentElement;
-                    }
+                const card = document.querySelector(`div[data-lb-id='${targetId}']`);
+                if (!card) {
+                    return { success: false, reason: `Card [${targetId}] not found in DOM` };
                 }
 
-                if (!container) {
-                    // Fallback to first post with reaction button
-                    container = document.querySelector("button[aria-label*='React'], button[aria-label*='Reaction']")?.parentElement?.parentElement;
+                const likeBtn = card.querySelector("button[aria-label*='React'], button[aria-label*='Reaction']");
+                if (!likeBtn) {
+                    return { success: false, reason: "Like button not found in card" };
                 }
 
-                if (container) {
-                    const likeBtn = container.querySelector("button[aria-label*='React'], button[aria-label*='Reaction']");
-                    if (likeBtn) {
-                        const isLiked = likeBtn.getAttribute("aria-pressed") === "true";
-                        if (!isLiked) {
-                            likeBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            likeBtn.click();
-                            return { success: true, status: "liked" };
-                        } else {
-                            return { success: true, status: "already_liked" };
-                        }
-                    }
+                const isLiked = likeBtn.getAttribute("aria-pressed") === "true";
+                if (isLiked) {
+                    return { success: true, status: "already_liked" };
                 }
-                return { success: false, status: "not_found" };
+
+                likeBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                likeBtn.click();
+                return { success: true, status: "liked" };
             }''', post_id)
 
             if clicked.get("success"):
-                self._human_delay(2.0, 4.0)
-                logger.info(f"👍 [REAL ACTION] Successfully liked real post: {post_id} ({clicked.get('status')})")
+                self._human_delay(2.0, 3.5)
+                logger.info(f"👍 [REAL ACTION] Successfully liked real post [{post_id}] ({clicked.get('status')})")
                 return {"status": "success", "post_id": post_id}
             else:
-                return {"status": "error", "message": "Reaction button not found"}
+                logger.warning(f"Could not like post [{post_id}]: {clicked.get('reason')}")
+                return {"status": "error", "message": clicked.get("reason")}
 
         except Exception as e:
-            logger.error(f"Failed to like post: {e}")
+            logger.error(f"Failed to like post {post_id}: {e}")
             return {"status": "error", "message": str(e)}
 
     def comment_post(self, post_id: str, comment_text: str) -> Dict[str, Any]:
         """
-        Opens the real comment box, types the substantive comment with keystroke jitter, and posts.
+        Locates the Comment button and Editor STRICTLY inside the matching post card.
+        Guarantees that comments are NEVER posted to the wrong card.
         """
         self._ensure_browser()
         try:
-            logger.info(f"[RealLinkedIn] Submitting comment to real post {post_id}...")
+            logger.info(f"[RealLinkedIn] Targeting comment box STRICTLY inside card [{post_id}]...")
 
-            # Click the comment button on the card
+            # 1. Click Comment button inside THAT card
             opened = self.page.evaluate('''(targetId) => {
-                let container = null;
-                const link = document.querySelector(`a[href*='${targetId}']`);
-                if (link) {
-                    let cur = link.parentElement;
-                    for (let i = 0; i < 10; i++) {
-                        if (!cur) break;
-                        if (cur.querySelector("button[aria-label='Comment']")) {
-                            container = cur;
-                            break;
-                        }
-                        cur = cur.parentElement;
-                    }
-                }
-                if (!container) {
-                    container = document.querySelector("button[aria-label='Comment']")?.parentElement?.parentElement;
-                }
+                const card = document.querySelector(`div[data-lb-id='${targetId}']`);
+                if (!card) return { success: false, reason: `Card [${targetId}] not found in DOM` };
 
-                if (container) {
-                    const btn = container.querySelector("button[aria-label='Comment']");
-                    if (btn) {
-                        btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        btn.click();
-                        return true;
-                    }
-                }
-                return false;
+                const commentBtn = card.querySelector("button[aria-label='Comment']");
+                if (!commentBtn) return { success: false, reason: "Comment button not found inside card" };
+
+                commentBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                commentBtn.click();
+                return { success: true };
             }''', post_id)
 
-            self._human_delay(2.0, 3.5)
+            if not opened.get("success"):
+                logger.warning(f"Failed to open comment box on [{post_id}]: {opened.get('reason')}")
+                return {"status": "error", "message": opened.get("reason")}
 
-            # Find the active comment box
-            editor = self.page.wait_for_selector(
-                "div.ql-editor[contenteditable='true'], div[role='textbox'], p[data-placeholder*='comment']",
-                timeout=7000
-            )
-            if not editor:
-                return {"status": "error", "message": "Comment input editor not opened"}
+            self._human_delay(1.5, 2.5)
+
+            # 2. Locate editor strictly inside this card
+            card_locator = self.page.locator(f"div[data-lb-id='{post_id}']")
+            editor = card_locator.locator("div.ql-editor, div[role='textbox'], p[data-placeholder*='comment']").first
+
+            try:
+                editor.wait_for(state="visible", timeout=6000)
+            except Exception:
+                return {"status": "error", "message": f"Editor inside card [{post_id}] did not become visible"}
 
             editor.click()
             self._human_delay(0.8, 1.5)
 
-            # Type text character by character with organic human jitter
+            # 3. Type comment with human keystroke jitter
             for char in comment_text:
                 self.page.keyboard.type(char)
                 time.sleep(random.uniform(0.015, 0.045))
                 if char in [".", ",", "!"]:
                     time.sleep(random.uniform(0.1, 0.25))
 
-            self._human_delay(2.0, 4.0)
+            self._human_delay(2.0, 3.5)
 
-            # Submit comment
-            submit_btn = self.page.wait_for_selector(
-                "button.comments-comment-box__submit-button, button:has-text('Comment')",
-                timeout=5000
-            )
-            if submit_btn:
+            # 4. Click Submit button strictly inside this card
+            submit_btn = card_locator.locator("button.comments-comment-box__submit-button, button:has-text('Comment')").first
+            try:
+                submit_btn.wait_for(state="visible", timeout=4000)
                 submit_btn.click()
                 self._human_delay(3.0, 5.0)
-                logger.info(f"💬 [REAL ACTION] Published real comment to LinkedIn post {post_id}")
+                logger.info(f"💬 [REAL ACTION] Published real comment to post [{post_id}]")
                 return {"status": "success", "comment": comment_text}
-            else:
-                return {"status": "error", "message": "Submit comment button not found"}
+            except Exception as e:
+                return {"status": "error", "message": f"Could not click submit button in card [{post_id}]: {e}"}
 
         except Exception as e:
-            logger.error(f"Failed to post comment: {e}")
+            logger.error(f"Failed to comment on {post_id}: {e}")
             return {"status": "error", "message": str(e)}
 
     def create_post(self, draft_text: str, media_attachment: Optional[str] = None) -> Dict[str, Any]:

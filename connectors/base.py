@@ -15,7 +15,7 @@ class LinkedInConnectorBase(ABC):
         pass
 
     @abstractmethod
-    def like_post(self, post_id: str) -> Dict[str, Any]:
+    def like_post(self, post_id: str, reaction_type: str = "LIKE") -> Dict[str, Any]:
         """
         Applies a like / reaction to a post.
         Returns response dict with success status and details.

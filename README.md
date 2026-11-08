@@ -1,122 +1,178 @@
-# LinkedBot: Autonomous Cybersecurity LinkedIn Growth Agent
+# Agent-LinkedIn (LinkedBot) 🚀
 
-**LinkedBot** is an autonomous AI social growth agent designed to build authentic B2B authority in cybersecurity through strategic liking, thoughtful commenting, and human-sounding thought leadership posts.
+[![CI](https://github.com/Akhil-Binu/agent-linkedin/actions/workflows/ci.yml/badge.svg)](https://github.com/Akhil-Binu/agent-linkedin/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](https://www.python.org/)
+[![Playwright](https://img.shields.io/badge/Playwright-Automated-green.svg)](https://playwright.dev/)
+[![LLM](https://img.shields.io/badge/LLM-Groq%20%7C%20Gemini%20%7C%20OpenAI-orange.svg)](https://groq.com/)
+[![Semantic Versioning](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/Akhil-Binu/agent-linkedin/releases)
 
----
-
-## 🛡️ Core Rules & Guardrails
-- **Anti-Slop Tone Guard:** Automatically blocks corporate clichés (`delve`, `testament`, `game-changer`, `in today's fast-paced world`, etc.) and generic praise (`great post`, `totally agree`).
-- **Target Domain:** **Cybersecurity** (Cloud Security & IAM, DevSecOps/AppSec, Detection Engineering/SOC alert fatigue, FIDO2/Auth, AI Red Teaming).
-- **Post Structure:** Strictly enforces `Hook -> Core Insight -> Example/Data -> Takeaway/Question` with short punchy paragraphs and <= 2 emojis.
-- **Engagement Heuristics:** Comments are 1–3 sentences offering a counter-perspective, sharp open-ended question, or technical micro-insight. Zero empty flattery.
-- **Rate-Limiter Circuit Breaker:** Daily & hourly quotas enforced; auto-triggers a 60-minute hard backoff if a 429 / rate limit is hit.
-- **Human-In-The-Loop (HITL):** If comment confidence < 85% or on original posts, items are staged in `hitl_queue.json` for review with optional Slack/Telegram webhook alerts.
-- **SQLite Analytics Engine:** Automatically tracks every scanned post, evaluation score, and engagement action to `data/analytics.db`.
-- **Autonomous Scheduler:** Features quiet hours (night pause) and human jitter to mimic organic user behavior.
+**Agent-LinkedIn (LinkedBot)** is an autonomous AI-powered LinkedIn growth and engagement agent. It simulates organic human browsing, performs intelligent post classification, executes targeted reactions, and drafts high-authority, value-additive comments free from corporate jargon or interrogation questions.
 
 ---
 
-## 🌐 Real LinkedIn Account Connection (1-Time Setup)
+## 🌟 Key Features
 
-To connect LinkedBot directly to your real LinkedIn profile with full 2FA/checkpoint support:
-
-1. **One-Time Interactive Browser Login:**
-   ```powershell
-   python main.py login
-   ```
-   A real Chromium browser window will open to `https://www.linkedin.com/login`. Log into your actual account (enter 2FA or mobile prompt if enabled). As soon as you hit your feed, LinkedBot verifies your login and permanently saves your authenticated session to `data/linkedin_browser_session`. You never have to log in again.
-
-2. **Run on Real LinkedIn Feed:**
-   ```powershell
-   python main.py run --real
-   ```
-   LinkedBot will open your authentic LinkedIn feed, scroll like a human, read real posts from your network, like matching cybersecurity posts, and type substantive comments with keystroke jitter.
-
-3. **Publish a Real Thought-Leadership Post to Your LinkedIn:**
-   ```powershell
-   python main.py post --from-bank cb_iam_01 --publish --real
-   ```
+- 🎭 **Real Playwright Browser Automation:** Persistent authenticated profile session with support for 2FA, checkpoints, human-like keystroke delays, smooth mouse wheel scrolling, and singleton lock management.
+- 🛡️ **Anti-Slop Tone Guard:** Automatically blocks corporate clichés (`delve`, `testament`, `game-changer`, `in today's fast-paced world`) and generic empty praise (`great post`, `totally agree`).
+- 💬 **Zero-Question Appreciative Comments:** Eliminates interrogation questions. Crafts supportive, validating peer affirmations tailored directly to the specific topic of each post (AI, cloud, software engineering, leadership, cybersecurity).
+- 🎯 **Dual-Condition Engagement Loop:** Guarantees satisfaction of user targets (e.g., minimum 15 comments and 20 reactions) across continuous feed streaming without early exits.
+- 🏷️ **Post Nature Classification:** Automatically classifies posts into 7 distinct categories (`CAREER_MILESTONE`, `CERTIFICATION_ACHIEVEMENT`, `PROJECT_OR_TOOL_LAUNCH`, `EVENT_OR_WEBINAR`, `LEADERSHIP_AND_CULTURE`, `TECHNICAL_OR_INDUSTRY_INSIGHT`, and `GENERAL_PROFESSIONAL`) and applies contextual reactions (`CELEBRATE` vs. `LIKE`).
+- 🤖 **Multi-Provider LLM Engine:** Seamless auto-failover across Groq (Llama-3.3 70B / GPT-OSS 120B), Google Gemini 1.5 Flash, OpenAI GPT-4o, and an offline deterministic mock fallback.
+- 🛑 **Rate-Limit Circuit Breaker:** Strict hourly/daily caps on comments and likes with automatic backoff cooldown upon detecting LinkedIn rate limits (429).
+- 👤 **Human-In-The-Loop (HITL) Staging:** Low-confidence comments and original thought leadership drafts are routed to an interactive review queue with optional Slack/Telegram alerts.
+- 📊 **SQLite Analytics Engine:** Automatically tracks every post evaluated, confidence score, sentiment, and reaction history in `data/analytics.db`.
+- 🌐 **Web Command Center:** Built-in FastAPI dashboard at `http://127.0.0.1:8000` with live metrics, approval cards, and content bank browser.
 
 ---
 
-## 🚀 Quickstart & Commands
+## 🏗️ Architecture
 
-Activate the virtual environment:
+```
+Agent-Linkedin/
+├── config/              # YAML and Pydantic configuration schemas
+│   ├── config.yaml      # Keywords, personas, and anti-slop rules
+│   └── settings.py      # AppConfig and rate limiter limits
+├── connectors/          # Feed & browser interaction drivers
+│   ├── base.py          # Abstract base connector
+│   ├── playwright_linkedin.py # Live browser automation via Playwright
+│   └── mock_linkedin.py # Zero-credential offline sandbox simulator
+├── core/                # Core agent intelligence
+│   ├── anti_slop.py     # Cliché detection & tone evaluation
+│   ├── evaluator.py     # Post classification & relevance scoring
+│   ├── generator.py     # LLM multi-provider comment & post generator
+│   ├── hitl.py          # Human-in-the-loop review queue
+│   ├── rate_limiter.py  # Sliding-window quota & backoff manager
+│   ├── analytics.py     # SQLite metrics and audit tracker
+│   └── content_bank.py  # Pre-vetted thought leadership drafts
+├── tests/               # Full unittest test suite
+├── web/                 # FastAPI Web Command Center
+├── main.py              # Unified CLI entrypoint
+└── pyproject.toml       # Package manifest & metadata
+```
+
+---
+
+## ⚡ Quickstart
+
+### 1. Prerequisites
+- Python 3.10 or higher
+- Git
+
+### 2. Installation
 ```powershell
+# Clone the repository
+git clone https://github.com/Akhil-Binu/agent-linkedin.git
+cd agent-linkedin
+
+# Create and activate virtual environment
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+
+# Install dependencies and Playwright Chromium
+pip install -r requirements.txt
+playwright install chromium
 ```
 
-### 1. Run Autonomous Scan & Engagement Cycle
-Ingests the feed, checks author credibility & relevance, likes matching posts, and generates value-add comments:
+### 3. Environment Configuration
+Copy the sample environment file:
 ```powershell
-python main.py run
+cp .env.example .env
+```
+Configure your credentials in `.env`:
+```ini
+LLM_PROVIDER=GROQ
+GROQ_API_KEY=your_groq_api_key_here
+LINKEDIN_MODE=REAL
 ```
 
-### 2. View Real-Time Status & Quotas
+---
+
+## 🕹️ CLI Usage & Commands
+
+### 1. Authenticate LinkedIn Account (One-Time Setup)
+Opens a dedicated Chromium window for logging in with your real LinkedIn account (handles 2FA/SMS checkpoints). Saves the session securely to `data/linkedin_browser_session`:
+```powershell
+python main.py login
+```
+
+### 2. Run Autonomous Engagement Cycle
+Scrolls the feed, classifies posts, reacts to updates, and submits tailored supportive comments:
+```powershell
+# Run with default targets (15 comments, 20 likes)
+python main.py run --real
+
+# Run with custom engagement goals
+python main.py run --real --target-comments 15 --target-likes 20
+
+# Reset rate limit quotas before running
+python main.py run --real --reset-limits
+```
+
+### 3. Launch Web Command Center
+Starts the FastAPI dashboard for monitoring real-time metrics and approving drafts:
+```powershell
+python main.py web --port 8000
+```
+Visit `http://127.0.0.1:8000` in your web browser.
+
+### 4. View Status & Quotas
 ```powershell
 python main.py status
 ```
 
-### 3. Launch the Web Command Center UI
-Open the full visual control dashboard with real-time approval cards, content studio, and analytics:
-```powershell
-python main.py web --port 8000
-```
-Then navigate to `http://127.0.0.1:8000` in your browser.
-
-### 4. Browse Cybersecurity Content Bank
-View pre-vetted, high-authority thought-leadership posts across 6 sub-domains:
-```powershell
-python main.py bank
-```
-
-### 4. Draft & Schedule a Thought Leadership Post
-- Draft from custom topic:
-  ```powershell
-  python main.py post --topic "IAM Wildcard Roles & Cloud Perimeters"
-  ```
-- Draft from Content Bank ID:
-  ```powershell
-  python main.py post --from-bank cb_iam_01
-  ```
-- Publish directly (bypassing HITL queue):
-  ```powershell
-  python main.py post --from-bank cb_secops_01 --publish
-  ```
-
-### 5. Review HITL Approval Queue
-Interactively approve `[a]`, reject `[r]`, or skip `[s]` pending drafts:
-```powershell
-python main.py queue
-```
-
-### 6. View Historical Analytics & Activity Log
+### 5. View SQLite Analytics Summary
 ```powershell
 python main.py analytics
 ```
 
-### 7. Run Continuous Scheduler Loop
-Runs recurring cycles with automatic quiet-hours pause and human jitter:
+### 6. Draft Thought Leadership Content
 ```powershell
+# Generate a new post draft from topic
+python main.py post --topic "Zero Trust Microsegmentation in Cloud Kubernetes"
+
+# Publish a pre-vetted draft from the content bank
+python main.py post --from-bank cb_iam_01 --publish --real
+```
+
+### 7. Review HITL Queue
+```powershell
+python main.py queue
+```
+
+### 8. Run Continuous Scheduler
+```powershell
+# Run every 4 hours with quiet hours pause
 python main.py schedule --interval-hours 4.0
 ```
 
-### 8. Run Unit Tests
+---
+
+## 🧪 Testing
+
+LinkedBot includes a comprehensive automated test suite covering anti-slop filters, post evaluators, rate limiting, and dual-target engagement cycles:
+
 ```powershell
 python -m unittest discover tests
 ```
 
 ---
 
-## ⚙️ Configuration & Connection Modes
+## 🛡️ Governance & Security
 
-Set your preferred mode in `.env`:
-- `LINKEDIN_MODE=MOCK`: Zero-credential offline sandbox simulator with realistic cybersecurity posts.
-- `LINKEDIN_MODE=BROWSER`: Live session mode using your `li_at` session cookie from browser developer tools (`LINKEDIN_LI_AT=...`). Includes natural human jitter delays between actions.
-- `LINKEDIN_MODE=API`: Official LinkedIn REST API using OAuth token (`LINKEDIN_ACCESS_TOKEN=...`).
+- **[LICENSE](LICENSE):** Licensed under the permissive [MIT License](LICENSE).
+- **[CONTRIBUTING.md](CONTRIBUTING.md):** Guidelines for code contributions, development workflow, and PR submission.
+- **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md):** Adheres to the Contributor Covenant v2.1.
+- **[SECURITY.md](SECURITY.md):** Procedures for responsible vulnerability disclosure.
 
-### LLM Providers
-Set in `.env`:
-- `LLM_PROVIDER=LOCAL_MOCK`: Deterministic, high-caliber domain engine (zero API keys needed).
-- `LLM_PROVIDER=GEMINI` + `GEMINI_API_KEY`: Google Gemini 1.5 Flash.
-- `LLM_PROVIDER=OPENAI` + `OPENAI_API_KEY`: OpenAI GPT-4o.
+---
+
+## 🤝 Contributing
+
+Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/Akhil-Binu/agent-linkedin/issues).
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

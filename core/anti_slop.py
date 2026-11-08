@@ -39,7 +39,7 @@ class AntiSlopFilter:
         )
         return len(emoji_pattern.findall(text))
 
-    def evaluate_comment_tone(self, comment: str) -> Tuple[bool, List[str], int]:
+    def evaluate_comment_tone(self, comment: str, post_type: str = "TECHNICAL_DISCUSSION") -> Tuple[bool, List[str], int]:
         """
         Validates comment length and tone.
         Returns (is_valid, violations, score_penalty).
@@ -53,11 +53,12 @@ class AntiSlopFilter:
             violations.append(f"Contains banned AI clichés: {', '.join(banned)}")
             penalty += 35 * len(banned)
 
-        # Check generic praise
-        praises = self.check_generic_praise(comment)
-        if praises:
-            violations.append(f"Contains generic praise: {', '.join(praises)}")
-            penalty += 40
+        # Check generic praise (allowed on career milestones and certifications where congratulations is intended)
+        if post_type not in ["CAREER_MILESTONE", "CERTIFICATION_ACHIEVEMENT"]:
+            praises = self.check_generic_praise(comment)
+            if praises:
+                violations.append(f"Contains generic praise: {', '.join(praises)}")
+                penalty += 40
 
         # Check sentence count (target 1-3 sentences)
         sentences = [s for s in re.split(r'[.!?]+', comment) if s.strip()]

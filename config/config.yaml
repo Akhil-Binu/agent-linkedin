@@ -42,6 +42,11 @@ target_keywords:
   - "least privilege"
   - "rce"
   - "owasp"
+  - "cissp"
+  - "oscp"
+  - "ceh"
+  - "cism"
+  - "security+"
 
 target_personas:
   - "Chief Information Security Officer (CISO)"
@@ -84,13 +89,13 @@ anti_slop:
     - "well said"
 
 commenting_rules:
-  max_sentences: 3
+  max_sentences: 2
   min_sentences: 1
   required_modes:
-    - "counter_perspective"
-    - "sharp_question"
+    - "professional_appreciation"
     - "concrete_micro_insight"
-  tone: "Conversational, peer-to-peer, technically grounded, zero fluff"
+    - "supportive_peer_affirmation"
+  tone: "Appreciative, supportive, peer-to-peer, technically grounded, strictly zero questions"
 
 posting_rules:
   framework:
@@ -103,10 +108,10 @@ posting_rules:
 
 safety:
   rate_limits:
-    max_likes_per_hour: 40
-    max_likes_per_day: 100
-    max_comments_per_hour: 20
-    max_comments_per_day: 50
-    max_posts_per_day: 5
+    max_likes_per_hour: 100
+    max_likes_per_day: 300
+    max_comments_per_hour: 40
+    max_comments_per_day: 100
+    max_posts_per_day: 10
     backoff_cooldown_seconds: 3600 # 60 minutes on rate limit or API block
   confidence_threshold_auto_engage: 85 # < 85% routes to HITL approval queue

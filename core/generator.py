@@ -19,14 +19,54 @@ class ContentGenerator:
         self.anti_slop = AntiSlopFilter(config.anti_slop)
 
     def _call_llm(self, system_prompt: str, user_prompt: str) -> Optional[str]:
-        """Dispatches prompt to configured LLM provider (Grok, Gemini, OpenAI) with auto-failover."""
+        """Dispatches prompt to configured LLM provider (Groq, Grok, Gemini, OpenAI) with auto-failover."""
         provider = self.config.llm_provider.upper()
+        groq_key = self.config.groq_api_key or os.getenv("GROQ_API_KEY", "")
         grok_key = self.config.grok_api_key or os.getenv("GROK_API_KEY", os.getenv("XAI_API_KEY", ""))
         gemini_key = self.config.gemini_api_key or os.getenv("GEMINI_API_KEY", "")
         openai_key = self.config.openai_api_key or os.getenv("OPENAI_API_KEY", "")
 
+        # If user passed a gsk_ key in grok_key, alias it to groq_key
+        if grok_key and grok_key.startswith("gsk_"):
+            groq_key = grok_key
+
+        def _try_groq():
+            if not groq_key:
+                return None
+            try:
+                import requests
+                headers = {
+                    "Authorization": f"Bearer {groq_key}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": "openai/gpt-oss-120b",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "temperature": 0.6
+                }
+                res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=10)
+                if res.status_code == 200:
+                    text = res.json()["choices"][0]["message"]["content"].strip()
+                    logger.info("Successfully generated contextual comment using Groq API.")
+                    return text
+                else:
+                    # Fallback to qwen on groq
+                    payload["model"] = "qwen/qwen3.8-27b"
+                    res2 = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=10)
+                    if res2.status_code == 200:
+                        text = res2.json()["choices"][0]["message"]["content"].strip()
+                        logger.info("Successfully generated contextual comment using Groq API (Qwen).")
+                        return text
+                    logger.warning(f"Groq API returned status {res.status_code}: {res.text[:100]}")
+            except Exception as e:
+                logger.warning(f"Groq call failed ({e}).")
+            return None
+
         def _try_grok():
-            if not grok_key:
+            if not grok_key or grok_key.startswith("gsk_"):
                 return None
             try:
                 import requests
@@ -112,99 +152,221 @@ class ContentGenerator:
             return None
 
         # Call in priority order based on provider setting
-        if provider == "GROK":
-            return _try_grok() or _try_gemini() or _try_openai()
+        if provider in ["GROQ", "GROK"]:
+            return _try_groq() or _try_grok() or _try_gemini() or _try_openai()
         elif provider == "OPENAI":
-            return _try_openai() or _try_grok() or _try_gemini()
+            return _try_openai() or _try_groq() or _try_gemini()
         else: # GEMINI or default
-            return _try_gemini() or _try_grok() or _try_openai()
+            return _try_gemini() or _try_groq() or _try_openai()
 
-    def generate_comment(self, post_content: str, author_profile: Dict[str, Any], suggested_angle: Optional[str] = None) -> Tuple[str, float, list]:
+    def generate_comment(
+        self,
+        post_content: str,
+        author_profile: Dict[str, Any],
+        suggested_angle: Optional[str] = None,
+        post_type: str = "TECHNICAL_DISCUSSION"
+    ) -> Tuple[str, float, list]:
         """
-        Generates a 1-3 sentence value-add comment directly relevant to the post.
+        Generates a 1-2 sentence tailored comment based on classified post type:
+        - CAREER_MILESTONE: Warm, professional appreciation & congratulations for the new security role.
+        - CERTIFICATION_ACHIEVEMENT: Encouraging commendation for discipline and milestone achievement.
+        - PROJECT_OR_TOOL_LAUNCH: Constructive appreciation for open-source / engineering tooling.
+        - EVENT_OR_WEBINAR: Supportive wish for high session engagement.
+        - TECHNICAL_DISCUSSION: Technical peer insight or sharp operational question.
         Returns: (comment_text, confidence_score, list_of_violations)
         """
-        system_prompt = (
-            "You are an experienced Principal Cybersecurity Engineer commenting on a peer's LinkedIn post. "
-            "CRITICAL INSTRUCTIONS: "
-            "1. You MUST directly and specifically address the EXACT technical topic of the post (e.g. if the post discusses a specific vulnerability, compression flaw, IAM misconfiguration, or SOC metric, focus strictly on that topic). "
-            "2. Write 1 to 2 concise, sharp sentences max. "
-            "3. Add technical substance: offer an edge case, a counter-perspective, or ask a sharp practitioner question. "
-            "4. NEVER use generic praise ('Great post', 'Spot on', 'Thanks for sharing'). "
-            "5. NEVER use AI buzzwords ('delve', 'testament', 'game-changer', 'fast-paced', 'in the digital age', 'crucial')."
-        )
-        user_prompt = (
-            f"Author: {author_profile.get('name', 'Peer')} ({author_profile.get('headline', '')})\n"
-            f"Post Content:\n\"{post_content}\"\n\n"
-            f"Write a sharp, 1-2 sentence response addressing their exact topic:"
-        )
+        author_name = author_profile.get("name", "Colleague")
+        author_title = author_profile.get("headline", "Cybersecurity Professional")
+        first_name = author_name.split()[0] if author_name else ""
+        name_ref = f", {first_name}" if first_name and first_name.lower() != "colleague" else ""
+
+        if post_type == "CAREER_MILESTONE":
+            system_prompt = (
+                "You are an experienced senior professional congratulating a colleague on their career announcement, new position, or promotion. "
+                "CRITICAL INSTRUCTIONS: "
+                "1. Offer warm, genuine, executive-to-peer appreciation and congratulations for their new role. "
+                "2. Directly mention their role, company, or team if present in the post. "
+                "3. DO NOT force cybersecurity terminology unless their post is explicitly about a security role. "
+                "4. STRICTLY NO QUESTIONS. Do NOT include any question marks ('?'). "
+                "5. Keep it concise (1 to 2 sentences max) in a warm, polished, human tone. "
+                "6. NEVER use AI clichés ('testament', 'beacon', 'delve', 'pivotal', 'game-changer')."
+            )
+            user_prompt = (
+                f"Author: {author_name} ({author_title})\n"
+                f"Career Announcement:\n\"{post_content}\"\n\n"
+                f"Write a warm, professional appreciation and congratulations comment (1-2 sentences):"
+            )
+
+        elif post_type == "CERTIFICATION_ACHIEVEMENT":
+            system_prompt = (
+                "You are an experienced professional congratulating a colleague on earning a certification, degree, or major accomplishment. "
+                "CRITICAL INSTRUCTIONS: "
+                "1. Commend their hard work, dedication, and discipline in an encouraging peer tone. "
+                "2. Acknowledge the specific credential or achievement mentioned in the post. "
+                "3. STRICTLY NO QUESTIONS. Do NOT include any question marks ('?'). "
+                "4. Keep it concise (1 to 2 sentences max). "
+                "5. NEVER use AI clichés ('testament', 'beacon', 'delve', 'pivotal', 'game-changer')."
+            )
+            user_prompt = (
+                f"Author: {author_name} ({author_title})\n"
+                f"Achievement Post:\n\"{post_content}\"\n\n"
+                f"Write a supportive, professional congratulations recognizing their milestone (1-2 sentences):"
+            )
+
+        elif post_type == "PROJECT_OR_TOOL_LAUNCH":
+            system_prompt = (
+                "You are an experienced technology professional commenting on a colleague's product launch, project release, or open-source tool. "
+                "CRITICAL INSTRUCTIONS: "
+                "1. Commend the effort and dedication required to ship and build the project. "
+                "2. Offer a warm, constructive affirmation on its practical value based on what it actually does. "
+                "3. DO NOT force cybersecurity terminology unless the tool is specifically security-related. "
+                "4. STRICTLY NO QUESTIONS. No question marks ('?'). "
+                "5. 1 to 2 sentences max in a supportive peer tone."
+            )
+            user_prompt = (
+                f"Author: {author_name} ({author_title})\n"
+                f"Project Post:\n\"{post_content}\"\n\n"
+                f"Write an appreciative, supportive comment on their project launch (1-2 sentences):"
+            )
+
+        elif post_type == "EVENT_OR_WEBINAR":
+            system_prompt = (
+                "You are a supportive peer commenting on a colleague's upcoming talk, webinar, podcast, or conference session. "
+                "CRITICAL INSTRUCTIONS: "
+                "1. Offer an encouraging note of support wishing them a fantastic session and high audience engagement. "
+                "2. Directly reflect the topic of their session. "
+                "3. STRICTLY NO QUESTIONS. No question marks ('?'). "
+                "4. 1 to 2 sentences max."
+            )
+            user_prompt = (
+                f"Author: {author_name} ({author_title})\n"
+                f"Event Post:\n\"{post_content}\"\n\n"
+                f"Write an encouraging note wishing them a successful session (1-2 sentences):"
+            )
+
+        elif post_type == "LEADERSHIP_AND_CULTURE":
+            system_prompt = (
+                "You are an experienced senior leader commenting on a colleague's post about management, work culture, team building, or career growth. "
+                "CRITICAL INSTRUCTIONS: "
+                "1. Express genuine appreciation for their perspective and validate the core insight. "
+                "2. Offer a supportive, seasoned peer reflection on leadership and teamwork. "
+                "3. STRICTLY NO QUESTIONS. No question marks ('?'). "
+                "4. 1 to 2 sentences max in an appreciative tone."
+            )
+            user_prompt = (
+                f"Author: {author_name} ({author_title})\n"
+                f"Post Content:\n\"{post_content}\"\n\n"
+                f"Write a supportive, validating leadership comment (1-2 sentences):"
+            )
+
+        else:
+            # TECHNICAL_OR_INDUSTRY_INSIGHT or GENERAL_PROFESSIONAL
+            system_prompt = (
+                "You are an experienced senior professional commenting on a colleague's post based directly on the post's actual topic and nature. "
+                "CRITICAL INSTRUCTIONS: "
+                "1. Directly address the EXACT topic of the post (e.g. AI/ML, software engineering, cloud, data, security, product development, design, or modern business). "
+                "2. Express genuine professional appreciation and validate their insight with an affirmative, constructive peer thought. "
+                "3. DO NOT force cybersecurity terminology unless the post is explicitly about cybersecurity. Comment on the author's actual subject matter. "
+                "4. STRICTLY NO QUESTIONS. Do NOT ask any questions or include question marks ('?'). Frame everything as an affirmative, supportive peer statement. "
+                "5. Write 1 to 2 concise, polished sentences max. "
+                "6. NEVER use generic empty praise ('Great post', 'Spot on', 'Thanks for sharing'). Pair your appreciation with specific technical or practical substance from their post. "
+                "7. NEVER use AI buzzwords ('delve', 'testament', 'game-changer', 'fast-paced', 'in the digital age', 'crucial')."
+            )
+            user_prompt = (
+                f"Author: {author_name} ({author_title})\n"
+                f"Post Content:\n\"{post_content}\"\n\n"
+                f"Write a 1-2 sentence appreciative, supportive comment addressing their exact topic without asking any questions:"
+            )
 
         llm_response = self._call_llm(system_prompt, user_prompt)
         if not llm_response:
-            # Deterministic cybersecurity domain fallback with STRICT word boundaries
+            # Deterministic domain fallbacks tailored to post nature (100% question-free & appreciative)
             lower = post_content.lower()
 
-            # 1. Vulnerability / CVE / Exploits / Flaws / Patching
-            if re.search(r'\b(cve|flaw|vulnerability|vulnerabilities|exploit|brotli|rce|shell|zeroday|zero-day|0day|0-day|patch|patching|buffer|overflow)\b', lower):
+            if post_type == "CAREER_MILESTONE":
                 comment = (
-                    "Vulnerabilities like this highlight the gap between theoretical presence and actual runtime reachability. "
-                    "If a vulnerable library isn't exposed along an active execution path, emergency patching can be a massive distraction. "
-                    "How is your team validating reachability before declaring a code-red drill?"
+                    f"Huge congratulations on stepping into the new role{name_ref}! "
+                    "Wishing you tremendous impact, fulfillment, and great success in this next chapter."
                 )
-
-            # 2. Identity & Access Management / MFA / FIDO2 / Phishing
-            elif re.search(r'\b(mfa|fido2|webauthn|passkeys?|phishing|authenticator|aitm|credential|passwords?)\b', lower):
+            elif post_type == "CERTIFICATION_ACHIEVEMENT":
                 comment = (
-                    "Phishing-resistant keys are the only real defense against modern adversary-in-the-middle kits like Evilginx. "
-                    "Standard push and SMS OTP are commoditized targets now. "
-                    "How are your engineering teams approaching hardware-bound FIDO2 rollouts for developer accounts?"
+                    f"Huge congratulations on earning this milestone{name_ref}! "
+                    "The discipline and dedicated preparation required to achieve this are significant. Very well deserved!"
                 )
-
-            # 3. Cloud Security & IAM / AWS / GCP / Azure
-            elif re.search(r'\b(iam|aws|gcp|azure|s3|bucket|least-privilege|permissions|cloud|kubernetes|k8s)\b', lower):
+            elif post_type == "PROJECT_OR_TOOL_LAUNCH":
                 comment = (
-                    "Over-permissioned service roles remain the quietest escalation vector in cloud infrastructure. "
-                    "Pruning inactive wildcard permissions older than 60 days usually eliminates half the blast radius overnight. "
-                    "Are you running automated IAM role usage audits across your CI/CD pipelines?"
+                    f"Fantastic work shipping this project{name_ref}! "
+                    "Bringing new tools and solutions from concept to reality takes serious dedication, and it is great to see it out in the community."
                 )
-
-            # 4. SOC / Detection Engineering / SIEM / Alert Fatigue
-            elif re.search(r'\b(soc|siem|soar|alert|fatigue|triage|incident response|detection|edr|xdr)\b', lower):
+            elif post_type == "EVENT_OR_WEBINAR":
                 comment = (
-                    "Alert volume without context is a recipe for analyst burnout. "
-                    "If a detection rule fires 100 times without producing a single actionable ticket, that rule belongs in the trash, not a dashboard. "
-                    "What threshold does your team use to deprecate noisy detection rules?"
+                    f"Wishing you a fantastic session and high-impact discussions{name_ref}! "
+                    "Important conversation to be sharing with the broader community."
                 )
-
-            # 5. Application Security / DevSecOps / Code Security
-            elif re.search(r'\b(appsec|devsecops|sast|dast|dependencies|supply chain|npm|pip|pipeline)\b', lower):
+            elif post_type == "LEADERSHIP_AND_CULTURE":
                 comment = (
-                    "The fastest way to lose developer trust is blocking pull requests for low-severity dependency alerts that aren't even invoked in production. "
-                    "How does your security team filter build-time noise before interrupting release velocity?"
+                    f"Really thoughtful perspective on team growth and operational alignment{name_ref}. "
+                    "Grounding leadership in practical empathy and clear focus is what truly moves organizations forward."
                 )
-
-            # 6. AI & LLM Security (Strict word boundary only)
-            elif re.search(r'\b(ai|llm|genai|gpt|rag|prompt injection|agent safety)\b', lower):
+            # Software / Code / Development
+            elif re.search(r'\b(code|coding|software|python|rust|javascript|typescript|golang|react|api|git)\b', lower):
                 comment = (
-                    "Treating autonomous AI agent outputs with the same zero-trust skepticism as raw user input is where many architectures fail. "
-                    "What isolation boundaries are you enforcing between your agent runtimes and production datastores?"
+                    "Really solid engineering perspective here. "
+                    "Prioritizing maintainable design and pragmatic execution over premature complexity is what separates robust codebases from legacy debt."
                 )
-
-            # 7. General Cybersecurity / Leadership / Architecture
+            # AI / ML / LLMs
+            elif re.search(r'\b(ai|llm|gpt|genai|prompt|machine\s+learning|deep\s+learning|model)\b', lower):
+                comment = (
+                    "Strong observation on practical AI system design and model integration. "
+                    "Balancing rapid model capabilities with reliable, deterministic execution boundaries is where the real engineering value is created."
+                )
+            # Cloud / Infrastructure / DevOps
+            elif re.search(r'\b(cloud|aws|azure|gcp|kubernetes|k8s|docker|devops|infra|database|sql)\b', lower):
+                comment = (
+                    "Spot-on perspective on cloud infrastructure and operational hygiene. "
+                    "Keeping systems streamlined, resilient, and well-architected by default makes a massive difference as environments scale."
+                )
+            # Cybersecurity (if explicitly cyber)
+            elif re.search(r'\b(cve|vulnerability|exploit|brotli|rce|malware|ransomware|soc|iam|fido2|zero\s+trust|phishing|infosec|cyber)\b', lower):
+                comment = (
+                    "Really valuable technical breakdown on defensive posture and risk mitigation. "
+                    "Prioritizing active signal over raw noise is essential for engineering and security teams alike."
+                )
             else:
                 comment = (
-                    "Bridging theoretical compliance posture with real practitioner operational friction is where the battle is won. "
-                    "How are you measuring mean time to remediate (MTTR) on the ground rather than just audit readiness?"
+                    f"Really appreciate this thoughtful perspective{name_ref}. "
+                    "Articulating these practical nuances brings valuable clarity to the broader professional community."
                 )
         else:
             comment = llm_response.strip().strip('"')
 
-        # Clean up any quotes or whitespace
-        comment = comment.replace("\n", " ").strip()
+        # Clean up any quotes or whitespace and normalize unicode punctuation
+        comment = (
+            comment.replace("\n", " ")
+            .replace("“", '"')
+            .replace("”", '"')
+            .replace("‘", "'")
+            .replace("’", "'")
+            .replace("–", "-")
+            .replace("—", "-")
+            .replace("\u2011", "-")
+            .replace("\u202f", " ")
+            .replace("\u00a0", " ")
+            .strip()
+        )
+
+        # STRICT ZERO-QUESTION ENFORCEMENT: Guarantee comment is purely appreciative & affirmative
+        if "?" in comment:
+            sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', comment) if s.strip()]
+            statement_sentences = [s for s in sentences if not s.endswith("?") and "?" not in s]
+            if statement_sentences:
+                comment = " ".join(statement_sentences)
+            else:
+                comment = comment.replace("?", ".").strip()
 
         # Run through tone & anti-slop verification
-        is_valid, violations, penalty = self.anti_slop.evaluate_comment_tone(comment)
-        base_confidence = 92.0
+        is_valid, violations, penalty = self.anti_slop.evaluate_comment_tone(comment, post_type=post_type)
+        base_confidence = 94.0 if post_type in ["CAREER_MILESTONE", "CERTIFICATION_ACHIEVEMENT"] else 92.0
         final_confidence = max(10.0, base_confidence - penalty)
 
         return comment, round(final_confidence, 1), violations

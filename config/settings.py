@@ -28,11 +28,11 @@ class PostingRules(BaseModel):
     paragraph_style: str = ""
 
 class RateLimitConfig(BaseModel):
-    max_likes_per_hour: int = 10
-    max_likes_per_day: int = 35
-    max_comments_per_hour: int = 5
-    max_comments_per_day: int = 15
-    max_posts_per_day: int = 2
+    max_likes_per_hour: int = 100
+    max_likes_per_day: int = 300
+    max_comments_per_hour: int = 40
+    max_comments_per_day: int = 100
+    max_posts_per_day: int = 10
     backoff_cooldown_seconds: int = 3600
 
 class SafetyConfig(BaseModel):
@@ -56,6 +56,7 @@ class AppConfig(BaseModel):
 
     # Runtime and external env variables
     llm_provider: str = Field(default="LOCAL_MOCK")
+    groq_api_key: str = Field(default="")
     gemini_api_key: str = Field(default="")
     grok_api_key: str = Field(default="")
     openai_api_key: str = Field(default="")
@@ -72,6 +73,7 @@ def load_config() -> AppConfig:
 
     # Bind environment variables
     env_llm = os.getenv("LLM_PROVIDER", "LOCAL_MOCK")
+    env_groq = os.getenv("GROQ_API_KEY", "")
     env_gemini = os.getenv("GEMINI_API_KEY", "")
     env_grok = os.getenv("GROK_API_KEY", os.getenv("XAI_API_KEY", ""))
     env_openai = os.getenv("OPENAI_API_KEY", "")
@@ -92,6 +94,7 @@ def load_config() -> AppConfig:
         posting_rules=PostingRules(**data.get("posting_rules", {})),
         safety=SafetyConfig(**data.get("safety", {})),
         llm_provider=env_llm,
+        groq_api_key=env_groq,
         gemini_api_key=env_gemini,
         grok_api_key=env_grok,
         openai_api_key=env_openai,

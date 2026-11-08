@@ -191,12 +191,34 @@ class MockLinkedInConnector(LinkedInConnectorBase):
         self.liked_posts: List[str] = []
         self.comments: List[Dict[str, Any]] = []
         self.posts: List[Dict[str, Any]] = []
+        self._scroll_step = 0
+
+    def scroll_down(self, pixels: int = 900):
+        self._scroll_step += 1
+        logger.info(f"[MockLinkedIn] Scrolled feed down (scroll step: {self._scroll_step})")
+
+    def get_visible_posts(self) -> List[Dict[str, Any]]:
+        posts = list(MOCK_CYBERSECURITY_FEED)
+        for i in range(1, (self._scroll_step * 5) + 1):
+            posts.append({
+                "post_id": f"urn:li:post:mock_dynamic_{i}",
+                "author": {
+                    "name": f"Practitioner {i}",
+                    "headline": "Senior Cloud Infrastructure & Security Architect",
+                    "profile_url": "https://linkedin.com"
+                },
+                "content": f"Modern distributed architectures require robust telemetry, automated canary deployments, and resilient failover patterns to maintain reliability at scale (Insight #{i}).",
+                "created_at": time.time() - (i * 300),
+                "likes_count": 25 + i,
+                "comments_count": 5 + i
+            })
+        return posts
 
     def get_feed(self, keywords: List[str], target_profiles: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         logger.info(f"[MockLinkedIn] Scanning feed for keywords: {keywords[:4]}...")
         return list(MOCK_CYBERSECURITY_FEED)
 
-    def like_post(self, post_id: str) -> Dict[str, Any]:
+    def like_post(self, post_id: str, reaction_type: str = "LIKE") -> Dict[str, Any]:
         if self.simulate_rate_limit:
             logger.warning("[MockLinkedIn] Simulated 429 Rate Limit Error encountered!")
             return {"status": "error", "error_code": 429, "message": "Rate limit exceeded"}

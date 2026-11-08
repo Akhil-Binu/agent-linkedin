@@ -75,6 +75,23 @@ class TestPostEvaluator(unittest.TestCase):
         self.assertTrue(result.should_like)
         self.assertTrue(result.confidence_score >= 80.0)
 
+    def test_classifies_career_milestone_and_certifications(self):
+        milestone = self.evaluator.analyze_post(
+            "p4",
+            "I'm happy to share that I'm starting a new position as Security Analyst at SentinelOne!",
+            {"headline": "Security Analyst"}
+        )
+        self.assertEqual(milestone.post_type, "CAREER_MILESTONE")
+        self.assertTrue(milestone.is_relevant)
+
+        cert = self.evaluator.analyze_post(
+            "p5",
+            "Proud to announce that I have passed the CISSP exam!",
+            {"headline": "SOC Engineer"}
+        )
+        self.assertEqual(cert.post_type, "CERTIFICATION_ACHIEVEMENT")
+        self.assertTrue(cert.is_relevant)
+
 class TestRateLimiter(unittest.TestCase):
     def setUp(self):
         self.temp_file = Path(tempfile.mktemp(suffix=".json"))
@@ -195,6 +212,21 @@ class TestWebEndpoints(unittest.TestCase):
 
         queue = get_queue()
         self.assertIsInstance(queue, list)
+
+class TestDualTargetEngagementLoop(unittest.TestCase):
+    def test_engagement_cycle_achieves_both_targets(self):
+        from main import LinkedBotAgent
+        bot = LinkedBotAgent(override_mode="MOCK")
+        bot.rate_limiter.reset()
+
+        bot.run_engagement_cycle(target_comments=15, target_likes=20, max_scrolls=10)
+
+        self.assertGreaterEqual(len(bot.connector.liked_posts), 20)
+        self.assertGreaterEqual(len(bot.connector.comments), 15)
+
+        for c in bot.connector.comments:
+            comment_text = c["comment_text"]
+            self.assertNotIn("?", comment_text, f"Comment must not contain questions: {comment_text}")
 
 if __name__ == "__main__":
     unittest.main()

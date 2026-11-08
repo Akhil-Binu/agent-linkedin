@@ -32,5 +32,11 @@ ENV/
 # Runtime data & state
 data/
 *.log
+*.db
+*.sqlite3
 hitl_queue.json
 rate_limit_state.json
+
+# IDE
+.vscode/
+.idea/

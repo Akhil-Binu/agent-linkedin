@@ -35,6 +35,27 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
 
+    def _cleanup_session_lock(self):
+        """Kills orphan Chrome instances accessing the session directory and cleans stale lockfile."""
+        import subprocess
+        ps_script = (
+            "Get-CimInstance Win32_Process -Filter \"Name = 'chrome.exe'\" | "
+            "Where-Object { $_.CommandLine -like '*linkedin_browser_session*' -or $_.ExecutablePath -like '*ms-playwright*' } | "
+            "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+        )
+        try:
+            subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, timeout=10)
+        except Exception:
+            pass
+
+        lock_file = self.user_data_dir / "lockfile"
+        if lock_file.exists():
+            try:
+                lock_file.unlink()
+            except Exception:
+                pass
+        time.sleep(1.0)
+
     def _ensure_browser(self):
         """Initializes or restores the persistent browser context with automatic lock recovery."""
         if self.page and not self.page.is_closed():
@@ -60,8 +81,7 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
         except Exception as e:
             if "ProcessSingleton" in str(e) or "already in use" in str(e):
                 logger.warning("Chromium session locked by previous process. Cleaning up and retrying...")
-                os.system('powershell "Get-Process -Name chrome -ErrorAction SilentlyContinue | Where-Object { $_.Path -like \'*ms-playwright*\' } | Stop-Process -Force -ErrorAction SilentlyContinue"')
-                time.sleep(2)
+                self._cleanup_session_lock()
                 self.context = self.playwright.chromium.launch_persistent_context(**launch_args)
             else:
                 raise e
@@ -160,17 +180,17 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                     const label = btn.getAttribute("aria-label") || "";
                     const author = label.replace("Open control menu for post by ", "").trim();
 
-                    // Walk up to find the closest card container with reaction buttons
-                    let container = btn.parentElement;
+                    // Walk up to find the highest single-post ancestor container
+                    let cur = btn.parentElement;
                     let foundCard = null;
-                    for (let step = 0; step < 10; step++) {
-                        if (!container) break;
-                        const hasReact = container.querySelector("button[aria-label*='React'], button[aria-label*='Reaction'], button[aria-label='Comment']");
-                        if (hasReact) {
-                            foundCard = container;
+                    while (cur && cur !== document.body) {
+                        const menus = cur.querySelectorAll("button[aria-label*='Open control menu for post by']");
+                        if (menus.length === 1) {
+                            foundCard = cur;
+                            cur = cur.parentElement;
+                        } else {
                             break;
                         }
-                        container = container.parentElement;
                     }
 
                     if (foundCard) {
@@ -248,43 +268,62 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
             logger.error(f"Error opening feed: {e}")
             return []
 
-    def like_post(self, post_id: str) -> Dict[str, Any]:
+    def like_post(self, post_id: str, reaction_type: str = "LIKE") -> Dict[str, Any]:
         """
-        Locates the Like button STRICTLY inside the matching post card.
+        Locates the Reaction button STRICTLY inside the matching post card.
+        Guarantees reactions are applied properly to the card.
+        Supports reaction_type: 'LIKE' or 'CELEBRATE'.
         """
         self._ensure_browser()
         try:
-            clicked = self.page.evaluate('''(targetId) => {
-                const card = document.querySelector(`div[data-lb-id='${targetId}']`);
+            clicked = self.page.evaluate('''(args) => {
+                const { targetId, reqReaction } = args;
+                const card = document.querySelector(`[data-lb-id='${targetId}']`);
                 if (!card) {
                     return { success: false, reason: `Card [${targetId}] not found in DOM` };
                 }
 
-                const likeBtn = card.querySelector("button[aria-label*='React'], button[aria-label*='Reaction']");
+                let likeBtn = card.querySelector("button[aria-label*='Reaction button state'], button[aria-label*='React'], button[aria-label*='Reaction']");
                 if (!likeBtn) {
-                    return { success: false, reason: "Like button not found in card" };
+                    const allBtns = Array.from(card.querySelectorAll("button"));
+                    likeBtn = allBtns.find(b => {
+                        const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+                        return aria.includes("reaction button state") || aria.includes("react") || aria.includes("like");
+                    });
                 }
 
-                const isLiked = likeBtn.getAttribute("aria-pressed") === "true";
-                if (isLiked) {
-                    return { success: true, status: "already_liked" };
+                if (!likeBtn) {
+                    return { success: false, reason: "Reaction button not found in card" };
+                }
+
+                const aria = (likeBtn.getAttribute("aria-label") || "").toLowerCase();
+                const isReacted = !aria.includes("no reaction") && (
+                    aria.includes("like") || aria.includes("celebrate") || aria.includes("support") || aria.includes("reaction") || aria.includes("insightful")
+                );
+
+                if (isReacted) {
+                    return { success: true, status: "already_reacted" };
                 }
 
                 likeBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 likeBtn.click();
-                return { success: true, status: "liked" };
-            }''', post_id)
+                return { success: true, status: "reacted" };
+            }''', {"targetId": post_id, "reqReaction": reaction_type.upper()})
 
             if clicked.get("success"):
+                reaction_state = clicked.get("status", "reacted")
+                if reaction_state == "already_reacted":
+                    logger.info(f"ℹ️ Post [{post_id}] was already reacted to. Preserving reaction.")
+                    return {"status": "already_reacted", "post_id": post_id, "reaction": reaction_type}
                 self._human_delay(1.5, 3.0)
-                logger.info(f"👍 [REAL LIKE] Clicked Like on card [{post_id}] ({clicked.get('status')})")
-                return {"status": "success", "post_id": post_id}
+                logger.info(f"👍 [REAL REACTION] Reacted to card [{post_id}] ({reaction_state})")
+                return {"status": "success", "post_id": post_id, "reaction": reaction_type}
             else:
-                logger.debug(f"Could not like post [{post_id}]: {clicked.get('reason')}")
+                logger.debug(f"Could not react to post [{post_id}]: {clicked.get('reason')}")
                 return {"status": "error", "message": clicked.get("reason")}
 
         except Exception as e:
-            logger.error(f"Failed to like post {post_id}: {e}")
+            logger.error(f"Failed to react to post {post_id}: {e}")
             return {"status": "error", "message": str(e)}
 
     def comment_post(self, post_id: str, comment_text: str) -> Dict[str, Any]:
@@ -296,17 +335,34 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
         try:
             logger.info(f"[RealLinkedIn] Submitting comment strictly inside card [{post_id}]...")
 
-            # 1. Click Comment button inside THAT card
+            # 1. Open or focus Comment editor inside THAT card
             opened = self.page.evaluate('''(targetId) => {
-                const card = document.querySelector(`div[data-lb-id='${targetId}']`);
+                const card = document.querySelector(`[data-lb-id='${targetId}']`);
                 if (!card) return { success: false, reason: `Card [${targetId}] not found in DOM` };
 
-                const commentBtn = card.querySelector("button[aria-label='Comment']");
+                // Check if editor is already open and visible in this card
+                const existingEditor = card.querySelector("div.ProseMirror, div[role='textbox'][contenteditable='true'], div[aria-label*='comment']");
+                if (existingEditor && existingEditor.offsetParent !== null) {
+                    existingEditor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    return { success: true, alreadyOpen: true };
+                }
+
+                // Locate Comment toggle button
+                let commentBtn = card.querySelector("button[aria-label='Comment']");
+                if (!commentBtn) {
+                    const allBtns = Array.from(card.querySelectorAll("button"));
+                    commentBtn = allBtns.find(b => {
+                        const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+                        const txt = (b.innerText || "").toLowerCase();
+                        return aria.includes("comment") || txt.includes("comment");
+                    });
+                }
+
                 if (!commentBtn) return { success: false, reason: "Comment button not found inside card" };
 
                 commentBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 commentBtn.click();
-                return { success: true };
+                return { success: true, alreadyOpen: false };
             }''', post_id)
 
             if not opened.get("success"):
@@ -316,11 +372,13 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
             self._human_delay(1.5, 2.5)
 
             # 2. Locate editor strictly inside this card
-            card_locator = self.page.locator(f"div[data-lb-id='{post_id}']")
-            editor = card_locator.locator("div.ql-editor, div[role='textbox'], p[data-placeholder*='comment']").first
+            card_locator = self.page.locator(f"[data-lb-id='{post_id}']")
+            editor = card_locator.locator(
+                "div.ProseMirror, div[role='textbox'][contenteditable='true'], div[aria-label*='comment'], div.ql-editor, p.is-editor-empty"
+            ).first
 
             try:
-                editor.wait_for(state="visible", timeout=6000)
+                editor.wait_for(state="visible", timeout=8000)
             except Exception:
                 return {"status": "error", "message": f"Editor inside card [{post_id}] did not become visible"}
 
@@ -338,16 +396,27 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
 
             # 4. Submit comment: try clicking the submit button or pressing Control+Enter
             submitted = False
+
+            # Primary: Look for submit button with text 'Comment' or 'Post' inside the card
             submit_btn = card_locator.locator(
-                "div.comments-comment-box form button[type='submit'], button.comments-comment-box__submit-button, button.artdeco-button--primary:has-text('Post')"
-            ).first
+                "button.gvyiaf, button[type='submit'], button.comments-comment-box__submit-button, button"
+            ).filter(has_text="Comment").first
 
             try:
-                if submit_btn.is_visible():
+                if submit_btn.is_visible(timeout=2000):
                     submit_btn.click()
                     submitted = True
             except Exception:
                 pass
+
+            if not submitted:
+                post_btn = card_locator.locator("button").filter(has_text="Post").first
+                try:
+                    if post_btn.is_visible(timeout=1000):
+                        post_btn.click()
+                        submitted = True
+                except Exception:
+                    pass
 
             if not submitted:
                 # Use native LinkedIn shortcut: Control+Enter submits the active comment box

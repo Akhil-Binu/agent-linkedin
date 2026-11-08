@@ -220,10 +220,13 @@ class TestDualTargetEngagementLoop(unittest.TestCase):
         from pathlib import Path
         from main import LinkedBotAgent
         from core.analytics import AnalyticsTracker
+        from core.rate_limiter import RateLimiter
 
         bot = LinkedBotAgent(override_mode="MOCK")
         temp_db = Path(tempfile.gettempdir()) / f"test_dual_{time.time()}.db"
+        temp_state = Path(tempfile.gettempdir()) / f"test_state_{time.time()}.json"
         bot.analytics = AnalyticsTracker(db_path=temp_db)
+        bot.rate_limiter = RateLimiter(bot.config.safety.rate_limits, state_file=temp_state)
         bot.rate_limiter.reset()
 
         try:
@@ -236,17 +239,31 @@ class TestDualTargetEngagementLoop(unittest.TestCase):
                 comment_text = c["comment_text"]
                 self.assertNotIn("?", comment_text, f"Comment must not contain questions: {comment_text}")
         finally:
-            if temp_db.exists():
-                try:
-                    temp_db.unlink()
-                except Exception:
-                    pass
+            for p in [temp_db, temp_state]:
+                if p.exists():
+                    try:
+                        p.unlink()
+                    except Exception:
+                        pass
 
 class TestAdvancedFeatures(unittest.TestCase):
     def setUp(self):
+        import tempfile
+        import time
+        from pathlib import Path
         from main import LinkedBotAgent
+        from core.rate_limiter import RateLimiter
         self.bot = LinkedBotAgent(override_mode="MOCK")
+        self.temp_state = Path(tempfile.gettempdir()) / f"test_adv_{time.time()}.json"
+        self.bot.rate_limiter = RateLimiter(self.bot.config.safety.rate_limits, state_file=self.temp_state)
         self.bot.rate_limiter.reset()
+
+    def tearDown(self):
+        if hasattr(self, "temp_state") and self.temp_state.exists():
+            try:
+                self.temp_state.unlink()
+            except Exception:
+                pass
 
     def test_targeted_search_ingestion(self):
         """Feature 1: Tests searching posts with hashtag/query."""

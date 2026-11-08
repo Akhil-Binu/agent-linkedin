@@ -44,7 +44,8 @@ dependencies = [
     "requests>=2.31.0",
     "rich>=13.0.0",
     "fastapi>=0.100.0",
-    "uvicorn>=0.22.0"
+    "uvicorn>=0.22.0",
+    "reportlab>=4.0.0"
 ]
 
 [project.optional-dependencies]

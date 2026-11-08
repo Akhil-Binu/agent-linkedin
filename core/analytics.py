@@ -154,3 +154,21 @@ class AnalyticsTracker:
             }
         finally:
             conn.close()
+
+    def get_recent_commented_posts(self, limit: int = 15) -> List[Dict[str, Any]]:
+        """Returns recently commented posts for 2-way thread reply tracking."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT target_id, content, confidence_score, timestamp
+                FROM action_history
+                WHERE action_type = 'comments' AND status = 'success'
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()

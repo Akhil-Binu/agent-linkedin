@@ -268,6 +268,34 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
             logger.error(f"Error opening feed: {e}")
             return []
 
+    def search_posts(self, query: str, sort_by: str = "date_posted") -> List[Dict[str, Any]]:
+        """
+        Navigates to LinkedIn content search for a given hashtag or keyword phrase,
+        filtered by 'date_posted' (Past 24 Hours / Latest) or 'relevance'.
+        """
+        self._ensure_browser()
+        try:
+            from urllib.parse import quote_plus
+            encoded_query = quote_plus(query.strip())
+            if sort_by == "date_posted":
+                search_url = f"https://www.linkedin.com/search/results/content/?keywords={encoded_query}&sortBy=%22date_posted%22"
+            else:
+                search_url = f"https://www.linkedin.com/search/results/content/?keywords={encoded_query}"
+
+            logger.info(f"🔎 [RealLinkedIn] Searching content for '{query}' (Sort: {sort_by})...")
+            self.page.goto(search_url, wait_until="domcontentloaded")
+            self._human_delay(3.0, 5.0)
+
+            if "/login" in self.page.url or "/checkpoint" in self.page.url:
+                logger.error("Session expired. Run 'python main.py login' to re-authenticate.")
+                return []
+
+            self.scroll_down(800)
+            return self.get_visible_posts()
+        except Exception as e:
+            logger.error(f"Error searching LinkedIn for '{query}': {e}")
+            return []
+
     def like_post(self, post_id: str, reaction_type: str = "LIKE") -> Dict[str, Any]:
         """
         Locates the Reaction button STRICTLY inside the matching post card.
@@ -476,6 +504,36 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
 
             self._human_delay(3.0, 5.0)
 
+            # If document carousel attachment provided (PDF), upload it
+            if media_attachment and str(media_attachment).endswith(".pdf") and os.path.exists(media_attachment):
+                logger.info(f"📄 Attaching PDF document carousel: {media_attachment}")
+                try:
+                    # Look for document button or hidden file input
+                    file_input = self.page.locator("input[type='file'][accept*='pdf'], input[type='file']")
+                    if file_input.count() > 0:
+                        file_input.first.set_input_files(str(media_attachment))
+                        self._human_delay(2.0, 3.5)
+                    else:
+                        doc_btn = self.page.locator("button[aria-label*='Add a document'], button:has-text('Add document')")
+                        if doc_btn.count() > 0:
+                            with self.page.expect_file_chooser() as fc_info:
+                                doc_btn.first.click()
+                            file_chooser = fc_info.value
+                            file_chooser.set_files(str(media_attachment))
+                            self._human_delay(2.0, 4.0)
+
+                    # If title input appears in document modal, fill it
+                    doc_title = self.page.locator("input[placeholder*='title'], input[name='title']")
+                    if doc_title.count() > 0 and doc_title.first.is_visible():
+                        doc_title.first.fill("Cybersecurity Architecture Guide")
+                        self._human_delay(1.0, 1.5)
+                        done_btn = self.page.locator("button:has-text('Done'), button:has-text('Next')")
+                        if done_btn.count() > 0:
+                            done_btn.first.click()
+                            self._human_delay(2.0, 3.0)
+                except Exception as doc_err:
+                    logger.warning(f"Could not attach document carousel ({doc_err}). Continuing with text post.")
+
             # Click final "Post" button
             post_btn = self.page.wait_for_selector(
                 "button.share-actions__primary-action, button:has-text('Post')",
@@ -491,4 +549,117 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
 
         except Exception as e:
             logger.error(f"Failed to publish post: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def send_connection_request(self, profile_url: str, note: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Navigates to a target user's profile, checks connection state,
+        and sends a warm connection invitation with an optional personalized note.
+        """
+        self._ensure_browser()
+        try:
+            if not profile_url or "linkedin.com/in/" not in profile_url:
+                return {"status": "skipped", "message": "No valid profile URL"}
+
+            logger.info(f"🤝 [RealLinkedIn] Visiting profile for connection: {profile_url}...")
+            self.page.goto(profile_url, wait_until="domcontentloaded")
+            self._human_delay(3.0, 5.0)
+
+            # Check if invitation already pending or already connected
+            status_check = self.page.evaluate('''() => {
+                const text = document.body.innerText;
+                const pendingBtn = document.querySelector("button[aria-label*='Pending']");
+                if (pendingBtn || text.includes("Pending invitation")) {
+                    return { status: "pending" };
+                }
+                const allBtns = Array.from(document.querySelectorAll("button"));
+                const connectBtn = allBtns.find(b => {
+                    const t = b.innerText.trim();
+                    const aria = b.getAttribute("aria-label") || "";
+                    return (t === "Connect" || aria.includes("Invite") || aria.includes("Connect with")) && !aria.includes("Message");
+                });
+                if (connectBtn) {
+                    return { status: "can_connect" };
+                }
+                const moreBtn = document.querySelector("button[aria-label='More actions']");
+                if (moreBtn) {
+                    return { status: "check_more" };
+                }
+                return { status: "already_connected_or_unavailable" };
+            }''')
+
+            if status_check.get("status") == "pending":
+                logger.info(f"ℹ️ Connection already pending for {profile_url}.")
+                return {"status": "pending", "message": "Invitation already pending"}
+            elif status_check.get("status") == "already_connected_or_unavailable":
+                logger.info(f"ℹ️ Already connected with {profile_url}.")
+                return {"status": "already_connected", "message": "Already connected"}
+
+            # Click Connect directly or open "More actions"
+            clicked_connect = self.page.evaluate('''() => {
+                const allBtns = Array.from(document.querySelectorAll("button"));
+                let connectBtn = allBtns.find(b => {
+                    const t = b.innerText.trim();
+                    const aria = b.getAttribute("aria-label") || "";
+                    return (t === "Connect" || aria.includes("Invite") || aria.includes("Connect with")) && !aria.includes("Message");
+                });
+                if (connectBtn) {
+                    connectBtn.click();
+                    return "clicked";
+                }
+                const moreBtn = document.querySelector("button[aria-label='More actions']");
+                if (moreBtn) {
+                    moreBtn.click();
+                    return "more";
+                }
+                return "none";
+            }''')
+
+            if clicked_connect == "more":
+                self._human_delay(1.0, 2.0)
+                self.page.evaluate('''() => {
+                    const items = Array.from(document.querySelectorAll("div[role='button'], div[role='menuitem']"));
+                    const connectItem = items.find(el => el.innerText.includes("Connect"));
+                    if (connectItem) connectItem.click();
+                }''')
+
+            self._human_delay(1.5, 3.0)
+
+            # If note provided, click "Add a note"
+            if note:
+                clean_note = note[:280].strip()
+                note_btn = self.page.locator("button:has-text('Add a note')")
+                if note_btn.count() > 0 and note_btn.first.is_visible():
+                    note_btn.first.click()
+                    self._human_delay(1.0, 2.0)
+                    text_area = self.page.locator("textarea[name='message'], #custom-message")
+                    if text_area.count() > 0 and text_area.first.is_visible():
+                        text_area.first.fill(clean_note)
+                        self._human_delay(1.0, 2.0)
+
+            # Click "Send" / "Send invitation"
+            send_btn = self.page.locator("button:has-text('Send invitation'), button:has-text('Send without a note'), button:has-text('Send')")
+            if send_btn.count() > 0 and send_btn.first.is_visible():
+                send_btn.first.click()
+                self._human_delay(2.0, 4.0)
+                logger.info(f"🎉 [RealLinkedIn] Connection invitation sent to {profile_url}!")
+                return {"status": "success", "profile_url": profile_url}
+            else:
+                return {"status": "skipped", "message": "Send modal button not found"}
+
+        except Exception as e:
+            logger.error(f"Failed to send connection request to {profile_url}: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def reply_to_comment(self, post_id: str, reply_text: str) -> Dict[str, Any]:
+        """
+        Submits a contextual reply to an ongoing comment thread inside card [post_id].
+        """
+        self._ensure_browser()
+        try:
+            logger.info(f"[RealLinkedIn] Submitting thread reply to card [{post_id}]...")
+            # Click Reply button inside the card or use comment box
+            return self.comment_post(post_id, reply_text)
+        except Exception as e:
+            logger.error(f"Failed to reply to comment thread on {post_id}: {e}")
             return {"status": "error", "message": str(e)}

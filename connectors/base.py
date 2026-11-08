@@ -37,3 +37,22 @@ class LinkedInConnectorBase(ABC):
         Returns response dict with status and created post ID/URL.
         """
         pass
+
+    def search_posts(self, query: str, sort_by: str = "date_posted") -> List[Dict[str, Any]]:
+        """
+        Searches LinkedIn content by keyword or hashtag with date sorting.
+        Default sorts by 'date_posted' (Past 24 hours / latest).
+        """
+        return []
+
+    def send_connection_request(self, profile_url: str, note: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Sends a warm connection request with an optional personalized note.
+        """
+        return {"status": "skipped", "message": "Not implemented"}
+
+    def reply_to_comment(self, post_id: str, reply_text: str) -> Dict[str, Any]:
+        """
+        Posts a contextual follow-up reply in an existing comment thread.
+        """
+        return {"status": "skipped", "message": "Not implemented"}

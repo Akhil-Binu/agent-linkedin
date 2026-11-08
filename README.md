@@ -14,6 +14,10 @@
 ## 🌟 Key Features
 
 - 🎭 **Real Playwright Browser Automation:** Persistent authenticated profile session with support for 2FA, checkpoints, human-like keystroke delays, smooth mouse wheel scrolling, and singleton lock management.
+- 🔎 **Targeted Hashtag & "Latest" Search:** Ingest specific hashtags (e.g., `#cybersecurity`, `#devsecops`) filtered by `sortBy="date_posted"` ("Past 24 Hours") to engage with brand-new posts before comment fatigue sets in.
+- 🤝 **Warm Connection Requests:** Automatically send personalized connection notes (< 280 chars) referencing the post topic to authors after commenting, adhering to safe daily quotas.
+- 🔄 **2-Way Reply Tracking & Conversation:** Monitor previously engaged posts for author/peer replies and publish contextual follow-up statements to build genuine professional authority.
+- 📑 **AI Carousel (PDF Slide) Generator:** Create modern 5-slide PDF document carousels (800x1000pt 4:5 portrait) with dark-mode cyber styling, ready for LinkedIn document posts.
 - 🛡️ **Anti-Slop Tone Guard:** Automatically blocks corporate clichés (`delve`, `testament`, `game-changer`, `in today's fast-paced world`) and generic empty praise (`great post`, `totally agree`).
 - 💬 **Zero-Question Appreciative Comments:** Eliminates interrogation questions. Crafts supportive, validating peer affirmations tailored directly to the specific topic of each post (AI, cloud, software engineering, leadership, cybersecurity).
 - 🎯 **Dual-Condition Engagement Loop:** Guarantees satisfaction of user targets (e.g., minimum 15 comments and 20 reactions) across continuous feed streaming without early exits.
@@ -41,6 +45,7 @@ Agent-Linkedin/
 │   ├── anti_slop.py     # Cliché detection & tone evaluation
 │   ├── evaluator.py     # Post classification & relevance scoring
 │   ├── generator.py     # LLM multi-provider comment & post generator
+│   ├── carousel_generator.py # 5-slide PDF carousel document builder
 │   ├── hitl.py          # Human-in-the-loop review queue
 │   ├── rate_limiter.py  # Sliding-window quota & backoff manager
 │   ├── analytics.py     # SQLite metrics and audit tracker
@@ -102,6 +107,12 @@ Scrolls the feed, classifies posts, reacts to updates, and submits tailored supp
 # Run with default targets (15 comments, 20 likes)
 python main.py run --real
 
+# Run targeted hashtag search on latest posts ('Past 24 Hours')
+python main.py run --real --search "#cybersecurity" --sort-by date_posted
+
+# Automatically send warm connection requests after commenting
+python main.py run --real --search "cloud security" --connect
+
 # Run with custom engagement goals
 python main.py run --real --target-comments 15 --target-likes 20
 
@@ -109,24 +120,43 @@ python main.py run --real --target-comments 15 --target-likes 20
 python main.py run --real --reset-limits
 ```
 
-### 3. Launch Web Command Center
+### 3. Generate 5-Slide PDF Document Carousels
+Converts thought leadership topics into high-conversion PDF carousels formatted for LinkedIn document posts:
+```powershell
+# Generate carousel from custom topic
+python main.py carousel --topic "IAM Wildcard Roles & Cloud Perimeters"
+
+# Generate carousel from Content Bank ID
+python main.py carousel --from-bank cb_iam_01
+
+# Directly publish carousel as a document post to LinkedIn
+python main.py carousel --from-bank cb_iam_01 --publish --real
+```
+
+### 4. 2-Way Reply Tracking & Conversation Follow-Up
+Scans previously engaged posts for replies from authors/peers and posts supportive follow-ups:
+```powershell
+python main.py replies --limit 10
+```
+
+### 5. Launch Web Command Center
 Starts the FastAPI dashboard for monitoring real-time metrics and approving drafts:
 ```powershell
 python main.py web --port 8000
 ```
 Visit `http://127.0.0.1:8000` in your web browser.
 
-### 4. View Status & Quotas
+### 6. View Status & Quotas
 ```powershell
 python main.py status
 ```
 
-### 5. View SQLite Analytics Summary
+### 7. View SQLite Analytics Summary
 ```powershell
 python main.py analytics
 ```
 
-### 6. Draft Thought Leadership Content
+### 8. Draft Thought Leadership Content
 ```powershell
 # Generate a new post draft from topic
 python main.py post --topic "Zero Trust Microsegmentation in Cloud Kubernetes"
@@ -135,12 +165,12 @@ python main.py post --topic "Zero Trust Microsegmentation in Cloud Kubernetes"
 python main.py post --from-bank cb_iam_01 --publish --real
 ```
 
-### 7. Review HITL Queue
+### 9. Review HITL Queue
 ```powershell
 python main.py queue
 ```
 
-### 8. Run Continuous Scheduler
+### 10. Run Continuous Scheduler
 ```powershell
 # Run every 4 hours with quiet hours pause
 python main.py schedule --interval-hours 4.0

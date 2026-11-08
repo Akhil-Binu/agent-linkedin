@@ -191,11 +191,42 @@ class MockLinkedInConnector(LinkedInConnectorBase):
         self.liked_posts: List[str] = []
         self.comments: List[Dict[str, Any]] = []
         self.posts: List[Dict[str, Any]] = []
+        self.connection_requests: List[Dict[str, Any]] = []
+        self.replies: List[Dict[str, Any]] = []
         self._scroll_step = 0
 
     def scroll_down(self, pixels: int = 900):
         self._scroll_step += 1
         logger.info(f"[MockLinkedIn] Scrolled feed down (scroll step: {self._scroll_step})")
+
+    def search_posts(self, query: str, sort_by: str = "date_posted") -> List[Dict[str, Any]]:
+        logger.info(f"[MockLinkedIn] Searching content for: '{query}' (Sort: {sort_by})...")
+        # Return mock posts matching query or standard feed
+        return self.get_visible_posts()
+
+    def send_connection_request(self, profile_url: str, note: Optional[str] = None) -> Dict[str, Any]:
+        if self.simulate_rate_limit:
+            return {"status": "error", "error_code": 429, "message": "Rate limit exceeded"}
+        entry = {
+            "profile_url": profile_url,
+            "note": note,
+            "timestamp": time.time()
+        }
+        self.connection_requests.append(entry)
+        logger.info(f"[MockLinkedIn] Sent warm connection request to {profile_url} with note: \"{note}\"")
+        return {"status": "success", "profile_url": profile_url}
+
+    def reply_to_comment(self, post_id: str, reply_text: str) -> Dict[str, Any]:
+        if self.simulate_rate_limit:
+            return {"status": "error", "error_code": 429, "message": "Rate limit exceeded"}
+        entry = {
+            "post_id": post_id,
+            "reply_text": reply_text,
+            "timestamp": time.time()
+        }
+        self.replies.append(entry)
+        logger.info(f"[MockLinkedIn] Published thread reply on {post_id}:\n  -> \"{reply_text}\"")
+        return {"status": "success", "reply": entry}
 
     def get_visible_posts(self) -> List[Dict[str, Any]]:
         posts = list(MOCK_CYBERSECURITY_FEED)

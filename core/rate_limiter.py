@@ -25,7 +25,8 @@ class RateLimiter:
             "actions": {
                 "likes": [],
                 "comments": [],
-                "posts": []
+                "posts": [],
+                "connections": []
             }
         }
 
@@ -108,6 +109,14 @@ class RateLimiter:
             if daily_count >= self.config.max_posts_per_day:
                 return False, f"Daily post limit reached ({daily_count}/{self.config.max_posts_per_day})"
 
+        elif action_type == "connections":
+            max_c_hr = getattr(self.config, "max_connections_per_hour", 3)
+            max_c_day = getattr(self.config, "max_connections_per_day", 10)
+            if hourly_count >= max_c_hr:
+                return False, f"Hourly connection request limit reached ({hourly_count}/{max_c_hr})"
+            if daily_count >= max_c_day:
+                return False, f"Daily connection request limit reached ({daily_count}/{max_c_day})"
+
         return True, "Permitted"
 
     def record_action(self, action_type: str):
@@ -128,7 +137,7 @@ class RateLimiter:
             "seconds_until_resume": max(0, int(backoff_until - now)) if is_cooling_down else 0,
             "actions_24h": {}
         }
-        for act in ["likes", "comments", "posts"]:
+        for act in ["likes", "comments", "posts", "connections"]:
             self._prune_actions(act, now)
             status["actions_24h"][act] = len(self.state["actions"].get(act, []))
         return status

@@ -33,6 +33,8 @@ class RateLimitConfig(BaseModel):
     max_comments_per_hour: int = 40
     max_comments_per_day: int = 100
     max_posts_per_day: int = 10
+    max_connections_per_hour: int = 3
+    max_connections_per_day: int = 10
     backoff_cooldown_seconds: int = 3600
 
 class SafetyConfig(BaseModel):

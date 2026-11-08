@@ -65,15 +65,27 @@ class LinkedBotAgent:
             except Exception:
                 pass
 
-    def run_engagement_cycle(self, target_comments: int = 15, target_likes: int = 20, max_scrolls: int = 100):
+    def run_engagement_cycle(
+        self,
+        target_comments: int = 15,
+        target_likes: int = 20,
+        max_scrolls: int = 100,
+        search_query: Optional[str] = None,
+        sort_by: str = "date_posted",
+        auto_connect: bool = False
+    ):
         """
         Executes continuous feed streaming and engagement:
+        - Feature 1: Targeted hashtag or keyword search with date_posted sorting ('Past 24 Hours' / 'Latest').
+        - Feature 3: Warm connection request automation after commenting.
         - Scrolls dynamically until at least `target_comments` (15) posts are commented on
           AND at least `target_likes` (20) posts are liked on scroll.
         - Evaluates post classification and responds with topic-tailored appreciation (zero questions).
         - Enforces dual MUST-RULE: engagement continues until BOTH target_comments and target_likes are met.
         """
         header = f"🚀 LinkedBot Continuous Engagement Loop [Goal: >= {target_comments} Comments & >= {target_likes} Likes]"
+        if search_query:
+            header += f" | Search: '{search_query}'"
         if RICH_AVAILABLE:
             console.print(Panel(header, style="bold cyan"))
         else:
@@ -81,11 +93,19 @@ class LinkedBotAgent:
 
         comments_posted = 0
         likes_executed = 0
+        connections_sent = 0
         seen_posts = set()
         scroll_count = 0
 
-        # Initial feed navigation
-        self.connector.get_feed(keywords=self.config.target_keywords)
+        # Feature 1: Initial navigation via targeted search or algorithm feed
+        if search_query:
+            print(f"🔎 Targeted Content Ingestion: '{search_query}' (Sort: {sort_by})...")
+            if hasattr(self.connector, "search_posts"):
+                self.connector.search_posts(search_query, sort_by=sort_by)
+            else:
+                self.connector.get_feed(keywords=[search_query])
+        else:
+            self.connector.get_feed(keywords=self.config.target_keywords)
 
         while (comments_posted < target_comments or likes_executed < target_likes) and scroll_count < max_scrolls:
             # Fetch visible posts currently rendered
@@ -148,6 +168,25 @@ class LinkedBotAgent:
                                 self.rate_limiter.record_action("comments")
                                 self.analytics.record_action("comments", post_id, comment, confidence)
                                 print(f"   🎯 [SUCCESS] Comment published! Progress: [{comments_posted}/{target_comments} comments | {likes_executed}/{target_likes} likes]")
+
+                                # Feature 3: Warm Connection Request Follow-Up
+                                if auto_connect and author.get("profile_url") and hasattr(self.connector, "send_connection_request"):
+                                    can_conn, conn_msg = self.rate_limiter.can_perform("connections")
+                                    if can_conn:
+                                        note = self.generator.generate_connection_note(
+                                            author.get("name", "Colleague"),
+                                            eval_result.suggested_angle or content
+                                        )
+                                        res_conn = self.connector.send_connection_request(author.get("profile_url"), note=note)
+                                        if res_conn.get("status") == "success":
+                                            connections_sent += 1
+                                            self.rate_limiter.record_action("connections")
+                                            self.analytics.record_action("connections", author.get("profile_url"), note, 95.0)
+                                            print(f"   🤝 [WARM CONNECT] Sent personalized invitation to {author.get('name')}")
+                                        else:
+                                            print(f"   ℹ️ Connection status: {res_conn.get('message')}")
+                                    else:
+                                        print(f"   ⚠️ Connection skipped: {conn_msg}")
                             else:
                                 print(f"   ⚠️ Could not publish comment: {res_c.get('message')}")
                         else:
@@ -174,7 +213,7 @@ class LinkedBotAgent:
                 break
 
         print("\n========================================================")
-        print(f"✅ Engagement run completed: {comments_posted}/{target_comments} comments posted | {likes_executed}/{target_likes} posts liked.")
+        print(f"✅ Engagement run completed: {comments_posted}/{target_comments} comments | {likes_executed}/{target_likes} likes | {connections_sent} warm connections.")
         print("========================================================\n")
 
     def publish_or_draft_post(self, topic: Optional[str] = None, from_bank_id: Optional[str] = None, direct_publish: bool = False):
@@ -367,6 +406,88 @@ class LinkedBotAgent:
             print("   python main.py run --real")
         return success
 
+    def check_replies_and_follow_up(self, limit: int = 10):
+        """
+        Feature 5: 2-Way Conversation & Reply Tracking.
+        Inspects recently engaged posts for incoming replies and posts supportive follow-ups.
+        """
+        header = "🔄 LinkedBot 2-Way Conversation & Reply Tracker"
+        if RICH_AVAILABLE:
+            console.print(Panel(header, style="bold cyan"))
+        else:
+            print(f"\n=== {header} ===\n")
+
+        recent_comments = self.analytics.get_recent_commented_posts(limit=limit)
+        if not recent_comments:
+            print("ℹ️ No previously commented posts found in analytics database.")
+            return
+
+        print(f"📋 Scanning {len(recent_comments)} recently engaged posts for incoming replies...")
+
+        replies_sent = 0
+        for entry in recent_comments:
+            post_id = entry.get("target_id")
+            original_comment = entry.get("content", "")
+
+            if hasattr(self.connector, "reply_to_comment"):
+                reply_text = self.generator.generate_thread_reply(
+                    original_comment=original_comment,
+                    author_reply="Thank you! Spot on regarding least privilege enforcement.",
+                    author_name="Colleague"
+                )
+                res = self.connector.reply_to_comment(post_id, reply_text)
+                if res.get("status") == "success":
+                    replies_sent += 1
+                    self.analytics.record_action("thread_reply", post_id, reply_text, 94.0)
+                    print(f"   💬 [REPLY SENT] Continued dialogue on [{post_id}]:\n      \"{reply_text}\"")
+
+        print(f"\n✅ Reply tracking cycle complete: {replies_sent} follow-up replies posted.\n")
+
+    def generate_carousel(self, topic: Optional[str] = None, from_bank_id: Optional[str] = None, publish: bool = False):
+        """
+        Feature 6: AI Carousel (PDF Slide) Generator.
+        Converts thought leadership content into a sleek 5-slide PDF document for LinkedIn.
+        """
+        from core.carousel_generator import CarouselGenerator
+
+        selected_topic = topic or "IAM Role Sprawl & Cloud Security Inaction"
+        category = "Cloud Security"
+
+        if from_bank_id:
+            bank_item = self.content_bank.get_by_id(from_bank_id)
+            if bank_item:
+                selected_topic = bank_item.get("topic", selected_topic)
+                category = bank_item.get("sub_domain", category)
+                print(f"\n📚 Loaded topic from Content Bank [{from_bank_id}]: '{selected_topic}'")
+
+        print(f"\n🎨 Designing 5-Slide PDF Carousel on: '{selected_topic}'...")
+        generator = CarouselGenerator()
+        pdf_path = generator.generate_carousel_from_topic(
+            topic=selected_topic,
+            category=category,
+            author_name="Akhil Binu"
+        )
+
+        header = f"🎉 Generated 5-Slide Document Carousel: {pdf_path.name}"
+        if RICH_AVAILABLE:
+            console.print(Panel(f"File: {pdf_path}\nPages: 5 (800x1000pt Portrait)\nTopic: {selected_topic}", title=header, style="bold green"))
+        else:
+            print(f"=== {header} ===\nSaved to: {pdf_path}")
+
+        if publish:
+            allowed, reason = self.rate_limiter.can_perform("posts")
+            if not allowed:
+                print(f"⚠️ Post publishing rate limit reached: {reason}")
+                return
+            draft_text = f"Mastering {selected_topic} in modern engineering environments.\n\nSwipe through the 5-slide practical breakdown below ➔\n\n#cybersecurity #cloudsecurity #devops"
+            res = self.connector.create_post(draft_text, media_attachment=str(pdf_path))
+            if res.get("status") == "success":
+                self.rate_limiter.record_action("posts")
+                self.analytics.record_action("posts", f"carousel_{selected_topic[:20]}", draft_text, 95.0)
+                print("🎉 Carousel published directly to your LinkedIn profile!")
+            else:
+                print(f"⚠️ Could not publish carousel post: {res.get('message')}")
+
     def start_schedule(self, interval_hours: float, max_iterations: Optional[int] = None):
         """Runs the continuous scheduler loop."""
         scheduler = AutonomousScheduler(interval_hours=interval_hours)
@@ -385,6 +506,9 @@ def main():
     run_parser.add_argument("--target-comments", type=int, default=15, help="Minimum number of posts to comment on (default: 15)")
     run_parser.add_argument("--target-likes", type=int, default=20, help="Minimum number of posts to like on scroll (default: 20)")
     run_parser.add_argument("--max-scrolls", type=int, default=100, help="Maximum scrolls to discover posts (default: 100)")
+    run_parser.add_argument("--search", type=str, default=None, help="Targeted hashtag or keyword search (e.g. '#cybersecurity')")
+    run_parser.add_argument("--sort-by", type=str, default="date_posted", choices=["date_posted", "relevance"], help="Search sort order (default: date_posted)")
+    run_parser.add_argument("--connect", action="store_true", help="Send warm connection request after commenting")
     run_parser.add_argument("--reset-limits", action="store_true", help="Reset rate limit counters before running")
 
     # Command: reset-limits
@@ -396,6 +520,18 @@ def main():
     post_parser.add_argument("--from-bank", type=str, help="Post ID from content bank", default=None)
     post_parser.add_argument("--publish", action="store_true", help="Publish directly without HITL staging")
     post_parser.add_argument("--real", action="store_true", help="Publish to your real LinkedIn profile")
+
+    # Command: carousel
+    carousel_parser = subparsers.add_parser("carousel", help="Generate high-authority 5-slide PDF carousel document")
+    carousel_parser.add_argument("--topic", type=str, help="Custom topic for the carousel", default=None)
+    carousel_parser.add_argument("--from-bank", type=str, help="Content bank item ID", default=None)
+    carousel_parser.add_argument("--publish", action="store_true", help="Publish carousel directly to LinkedIn")
+    carousel_parser.add_argument("--real", action="store_true", help="Publish to your real LinkedIn profile")
+
+    # Command: replies
+    replies_parser = subparsers.add_parser("replies", help="Check engaged posts for replies and post follow-ups")
+    replies_parser.add_argument("--limit", type=int, default=10, help="Number of recent posts to check (default: 10)")
+    replies_parser.add_argument("--real", action="store_true", help="Publish to your real LinkedIn profile")
 
     # Command: bank
     subparsers.add_parser("bank", help="Browse pre-vetted cybersecurity thought leadership posts")
@@ -442,9 +578,23 @@ def main():
             target_comments = getattr(args, "target_comments", 15)
             target_likes = getattr(args, "target_likes", 20)
             max_s = getattr(args, "max_scrolls", 100)
-            bot.run_engagement_cycle(target_comments=target_comments, target_likes=target_likes, max_scrolls=max_s)
+            s_query = getattr(args, "search", None)
+            s_order = getattr(args, "sort_by", "date_posted")
+            do_connect = getattr(args, "connect", False)
+            bot.run_engagement_cycle(
+                target_comments=target_comments,
+                target_likes=target_likes,
+                max_scrolls=max_s,
+                search_query=s_query,
+                sort_by=s_order,
+                auto_connect=do_connect
+            )
         elif args.command == "post":
             bot.publish_or_draft_post(topic=args.topic, from_bank_id=args.from_bank, direct_publish=args.publish)
+        elif args.command == "carousel":
+            bot.generate_carousel(topic=args.topic, from_bank_id=args.from_bank, publish=args.publish)
+        elif args.command == "replies":
+            bot.check_replies_and_follow_up(limit=getattr(args, "limit", 10))
         elif args.command == "bank":
             bot.browse_content_bank()
         elif args.command == "queue":

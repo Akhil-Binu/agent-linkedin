@@ -429,3 +429,47 @@ class ContentGenerator:
         final_confidence = max(10.0, base_confidence - penalty)
 
         return post, round(final_confidence, 1), violations
+
+    def generate_connection_note(self, author_name: str, topic_or_context: str) -> str:
+        """
+        Generates a warm, professional connection invitation note (< 280 chars)
+        referencing the author's recent post or perspective without asking questions.
+        """
+        first_name = author_name.split()[0] if author_name else "Colleague"
+        clean_topic = topic_or_context.replace("\n", " ").strip()[:60] if topic_or_context else "systems engineering"
+
+        note = f"Hi {first_name}, really appreciated your recent perspective on {clean_topic}. Would love to connect and follow your work here on LinkedIn!"
+        if len(note) > 280:
+            note = f"Hi {first_name}, really enjoyed your recent post. Would love to connect and follow your work here on LinkedIn!"
+        return note
+
+    def generate_thread_reply(self, original_comment: str, author_reply: str, author_name: str) -> str:
+        """
+        Generates a concise, supportive 1-2 sentence response to an incoming reply
+        in an ongoing comment thread without question marks.
+        """
+        first_name = author_name.split()[0] if author_name else ""
+        name_ref = f", {first_name}" if first_name else ""
+
+        system_prompt = (
+            "You are an experienced senior engineer continuing a thoughtful LinkedIn conversation. "
+            "Write a concise, supportive 1-2 sentence follow-up acknowledging their reply. "
+            "STRICTLY NO QUESTIONS. No question marks ('?'). "
+            "Validate their point with seasoned peer perspective. Never use clichés or empty praise."
+        )
+        user_prompt = (
+            f"Author replied: \"{author_reply}\"\n"
+            f"Our previous comment: \"{original_comment}\"\n\n"
+            f"Write a 1-2 sentence appreciative follow-up:"
+        )
+
+        reply = self._call_llm(system_prompt, user_prompt)
+        if not reply:
+            reply = f"Really appreciate the thoughtful follow-up{name_ref}. That operational nuance makes all the difference when putting these practices into production."
+
+        # Clean quotes and strip questions
+        reply = reply.strip().strip('"').replace("\n", " ")
+        if "?" in reply:
+            reply = reply.replace("?", ".").strip()
+
+        return reply

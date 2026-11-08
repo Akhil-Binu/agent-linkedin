@@ -228,5 +228,52 @@ class TestDualTargetEngagementLoop(unittest.TestCase):
             comment_text = c["comment_text"]
             self.assertNotIn("?", comment_text, f"Comment must not contain questions: {comment_text}")
 
+class TestAdvancedFeatures(unittest.TestCase):
+    def setUp(self):
+        from main import LinkedBotAgent
+        self.bot = LinkedBotAgent(override_mode="MOCK")
+        self.bot.rate_limiter.reset()
+
+    def test_targeted_search_ingestion(self):
+        """Feature 1: Tests searching posts with hashtag/query."""
+        posts = self.bot.connector.search_posts("#cybersecurity", sort_by="date_posted")
+        self.assertIsInstance(posts, list)
+        self.assertGreater(len(posts), 0)
+
+    def test_warm_connection_request(self):
+        """Feature 3: Tests connection note generation and request dispatch."""
+        note = self.bot.generator.generate_connection_note("Elena Rostova", "IAM least privilege audits")
+        self.assertIn("Elena", note)
+        self.assertNotIn("?", note)
+        self.assertLessEqual(len(note), 280)
+
+        res = self.bot.connector.send_connection_request("https://linkedin.com/in/elena-rostova-appsec", note=note)
+        self.assertEqual(res.get("status"), "success")
+        self.assertEqual(len(self.bot.connector.connection_requests), 1)
+
+    def test_thread_reply_generation(self):
+        """Feature 5: Tests 2-way conversation reply generation."""
+        reply = self.bot.generator.generate_thread_reply(
+            original_comment="Focusing on reachability analysis cuts CVE noise.",
+            author_reply="Thanks! We saw a 70% reduction in false alarms last quarter.",
+            author_name="David Vance"
+        )
+        self.assertIsInstance(reply, str)
+        self.assertGreater(len(reply), 15)
+        self.assertNotIn("?", reply, "Thread reply must not contain questions")
+
+    def test_carousel_generator(self):
+        """Feature 6: Tests AI PDF carousel generation."""
+        from core.carousel_generator import CarouselGenerator
+        generator = CarouselGenerator()
+        pdf_path = generator.generate_carousel_from_topic(
+            topic="Zero Trust Kubernetes Security",
+            category="DevSecOps",
+            author_name="Akhil Binu"
+        )
+        self.assertTrue(pdf_path.exists())
+        self.assertTrue(str(pdf_path).endswith(".pdf"))
+        self.assertGreater(pdf_path.stat().st_size, 5000)
+
 if __name__ == "__main__":
     unittest.main()

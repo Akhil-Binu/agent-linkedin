@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-linkedin"
-version = "1.0.0"
+version = "1.2.0"
 description = "Autonomous AI-powered LinkedIn growth and engagement agent with intelligent post evaluation, zero-slop commenting, and human-in-the-loop safeguards."
 readme = "README.md"
 authors = [
@@ -48,11 +48,24 @@ dependencies = [
     "reportlab>=4.0.0"
 ]
 
+[project.scripts]
+linkedbot = "main:main"
+agent-linkedin = "main:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
-    "flake8>=6.0.0"
+    "flake8>=6.0.0",
+    "build>=1.0.0",
+    "twine>=4.0.0"
 ]
+
+[tool.setuptools]
+packages = ["config", "connectors", "core", "web"]
+py-modules = ["main", "menu"]
+
+[tool.setuptools.package-data]
+config = ["*.yaml"]
 
 [project.urls]
 Homepage = "https://github.com/Akhil-Binu/agent-linkedin"

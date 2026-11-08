@@ -190,7 +190,7 @@ python main.py
 ```text
 ╔══════════════════════════════════════════════════════════════╗
 ║          🤖 LINKEDBOT - AUTONOMOUS LINKEDIN AGENT           ║
-║            Interactive Feature Menu: Choose [1-5]           ║
+║            Interactive Feature Menu: Choose [0-9]           ║
 ╚══════════════════════════════════════════════════════════════╝
 
 Select a feature to execute:
@@ -198,14 +198,15 @@ Select a feature to execute:
   [2] 🚀 General Feed Engagement Loop (Must-Rule: 15 Comments & 20 Likes)
   [3] 🤝 Warm Connection Requests (Personalized Outreach to Commented Authors)
   [4] 🔄 2-Way Reply Tracker (Continue Dialogues on Active Threads)
-  [5] 📑 AI Carousel Generator (Design 5-Slide PDF Document for LinkedIn)
+  [5] 🔔 Read Notifications & Auto-Reply (Scan Inbound Alerts & Continue Discussions)
+  [6] 📑 AI Carousel Generator (Design 5-Slide PDF Document for LinkedIn)
   --------------------------------------------------------------
-  [6] 📊 View Analytics & Activity History
-  [7] 🛡️ View Rate Limit & Queue Status
-  [8] 🔐 Real LinkedIn 1-Time Interactive Login
+  [7] 📊 View Analytics & Activity History
+  [8] 🛡️ View Rate Limit & Queue Status
+  [9] 🔐 Real LinkedIn 1-Time Interactive Login
   [0] ❌ Exit
 
-👉 Enter choice [0-8]:
+👉 Enter choice [0-9]:
 ```
 
 ---
@@ -255,12 +256,23 @@ python main.py carousel --topic "Cloud IAM Least Privilege" --publish --real
 ```powershell
 # Scan recent 10 posts for author/peer replies and post follow-ups
 python main.py replies --limit 10
+python main.py replies --limit 10 --real
 
 # Run reply tracking in mock mode
-python main.py replies --limit 5 --mock
+python main.py replies --limit 5
 ```
 
-### 5. Analytics, System Health & Queue Inspection
+### 5. Read Inbound Notifications & Auto-Reply Engine
+Inspects `https://www.linkedin.com/notifications/`, extracts active discussions (replies to your comments, mentions, comments on your posts), generates peer-level contextual replies with Groq LLM, and submits replies directly to the thread:
+```powershell
+# Scan recent 5 inbound notifications and publish replies on real LinkedIn
+python main.py notifications --limit 5 --real
+
+# Run notification scanner in offline mock mode (test simulation)
+python main.py notifications --limit 5
+```
+
+### 6. Analytics, System Health & Queue Inspection
 ```powershell
 # View SQLite analytics summary (total evaluations, reactions, comments)
 python main.py analytics
@@ -272,7 +284,7 @@ python main.py status
 python main.py queue
 ```
 
-### 6. Continuous Autonomous Scheduler
+### 7. Continuous Autonomous Scheduler
 ```powershell
 # Run engagement loop automatically every 4 hours with quiet hours pause
 python main.py schedule --interval-hours 4.0

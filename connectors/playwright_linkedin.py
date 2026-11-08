@@ -142,6 +142,8 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
         except Exception:
             pass
 
+    _dismiss_transient_overlays = _dismiss_overlays
+
     def interactive_login(self) -> bool:
         """
         Launches a visible browser window allowing the user to log in manually once.
@@ -880,4 +882,152 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
             return self.comment_post(post_id, reply_text)
         except Exception as e:
             logger.error(f"Failed to reply to comment thread on {post_id}: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def get_notifications(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Navigates to LinkedIn Notifications (https://www.linkedin.com/notifications/)
+        and parses active replies, mentions, and discussion comments.
+        """
+        self._ensure_browser()
+        try:
+            logger.info("🔔 [RealLinkedIn] Navigating to notifications page...")
+            self.page.goto("https://www.linkedin.com/notifications/", wait_until="domcontentloaded")
+            self._human_delay(3.0, 5.0)
+
+            if "/login" in self.page.url or "/checkpoint" in self.page.url:
+                logger.error("Session expired. Run 'python main.py login' to authenticate.")
+                return []
+
+            self._dismiss_overlays()
+            self.scroll_down(600)
+
+            raw_items = self.page.evaluate('''() => {
+                const results = [];
+                // Query potential notification containers
+                const nodes = Array.from(document.querySelectorAll("article, div.nt-card, div[data-finite-scroll-hotkey-item], li.nt-item"));
+                
+                for (const node of nodes) {
+                    const text = (node.innerText || "").replace(/\\s+/g, ' ').trim();
+                    if (!text || text.length < 15) continue;
+
+                    // Match notifications related to conversations / replies / mentions
+                    const lower = text.toLowerCase();
+                    const isReply = lower.includes("replied to your comment") || lower.includes("replied to a comment");
+                    const isComment = lower.includes("commented on your") || lower.includes("commented on a post");
+                    const isMention = lower.includes("mentioned you");
+
+                    if (!isReply && !isComment && !isMention) continue;
+
+                    let notifType = "reply";
+                    if (isMention) notifType = "mention";
+                    else if (isComment) notifType = "comment";
+
+                    // Extract link to the update
+                    let link = "";
+                    const linkEl = node.querySelector("a[href*='/feed/update/'], a[href*='/notifications/'], a[href*='urn:li:activity:']");
+                    if (linkEl && linkEl.href) {
+                        link = linkEl.href;
+                    }
+
+                    // Extract actor name
+                    let actor = "LinkedIn Member";
+                    const actorEl = node.querySelector("span[aria-hidden='true'], strong, .nt-card__headline");
+                    if (actorEl && actorEl.innerText) {
+                        const actorCandidate = actorEl.innerText.trim();
+                        if (actorCandidate.length > 2 && actorCandidate.length < 40) {
+                            actor = actorCandidate;
+                        }
+                    }
+
+                    results.push({
+                        id: `notif_${results.length + 1}`,
+                        type: notifType,
+                        actor_name: actor,
+                        text: text.slice(0, 300),
+                        target_url: link,
+                        timestamp: Date.now() / 1000
+                    });
+                }
+                return results;
+            }''')
+
+            logger.info(f"🔔 [RealLinkedIn] Found {len(raw_items)} interactive notifications.")
+            return raw_items[:limit]
+
+        except Exception as e:
+            logger.error(f"Error fetching LinkedIn notifications: {e}")
+            return []
+
+    def reply_to_notification(self, notification: Dict[str, Any], reply_text: str) -> Dict[str, Any]:
+        """
+        Navigates directly to the target thread from a notification and posts a contextual reply.
+        """
+        self._ensure_browser()
+        target_url = notification.get("target_url")
+        actor = notification.get("actor_name", "Author")
+        if not target_url:
+            logger.warning(f"⚠️ [RealLinkedIn] No target URL found for notification from {actor}.")
+            return {"status": "skipped", "message": "Missing notification target URL"}
+
+        try:
+            logger.info(f"🌐 [RealLinkedIn] Opening notification thread: {target_url}...")
+            self.page.goto(target_url, wait_until="domcontentloaded")
+            self._human_delay(3.0, 5.0)
+
+            if "/login" in self.page.url or "/checkpoint" in self.page.url:
+                logger.error("Session expired. Run 'python main.py login' to authenticate.")
+                return {"status": "error", "message": "Session expired"}
+
+            self._dismiss_overlays()
+
+            # 1. Try finding a direct "Reply" button on the author's comment
+            replied = self.page.evaluate('''(authorName) => {
+                const buttons = Array.from(document.querySelectorAll("button"));
+                const replyBtn = buttons.find(b => {
+                    const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+                    const txt = (b.innerText || "").toLowerCase();
+                    return (aria.includes("reply") || txt === "reply") && !aria.includes("close");
+                });
+                if (replyBtn) {
+                    replyBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    replyBtn.click();
+                    return true;
+                }
+                return false;
+            }''', actor)
+
+            self._human_delay(1.5, 2.5)
+
+            # 2. Locate active comment / reply editor on the page
+            editor = self.page.locator(
+                "div.ProseMirror, div[role='textbox'][contenteditable='true'], div[aria-label*='comment'], div.ql-editor, p.is-editor-empty"
+            ).first
+
+            editor.wait_for(state="visible", timeout=8000)
+            editor.scroll_into_view_if_needed()
+            editor.click()
+            self._human_delay(0.5, 1.0)
+
+            # 3. Type reply with humanized keystrokes
+            for chunk in [reply_text[i:i+4] for i in range(0, len(reply_text), 4)]:
+                editor.press_sequentially(chunk, delay=35)
+                self._human_delay(0.02, 0.05)
+
+            self._human_delay(1.5, 2.5)
+
+            # 4. Click Submit
+            submit_btn = self.page.locator(
+                "button.comments-comment-box__submit-button, button:has-text('Comment'), button:has-text('Reply')"
+            ).first
+            if submit_btn.is_visible() and not submit_btn.is_disabled():
+                submit_btn.click()
+                self._human_delay(3.0, 5.0)
+                logger.info(f"🎯 [RealLinkedIn] Successfully replied to notification from {actor}!")
+                return {"status": "success", "actor": actor, "reply_text": reply_text, "target_url": target_url}
+            else:
+                return {"status": "error", "message": "Submit button not clickable"}
+
+        except Exception as e:
+            logger.error(f"Failed to reply to notification: {e}")
             return {"status": "error", "message": str(e)}

@@ -286,3 +286,56 @@ class MockLinkedInConnector(LinkedInConnectorBase):
         self.posts.append(post_entry)
         logger.info(f"[MockLinkedIn] Published thought leadership post:\n{draft_text[:120]}...")
         return {"status": "success", "post": post_entry}
+
+    def get_notifications(self, limit: int = 10) -> List[Dict[str, Any]]:
+        logger.info(f"[MockLinkedIn] Reading incoming notifications feed (limit={limit})...")
+        now = time.time()
+        mock_notifs = [
+            {
+                "id": "notif_001",
+                "type": "reply",
+                "actor_name": "Sarah Jenkins",
+                "actor_headline": "Staff Cloud Security Architect @ Datadog",
+                "text": "Akhil, spot on regarding IAM least-privilege pruning. We've also started combining SCP boundaries with dynamic session tokens. What's your take on automated IAM Access Analyzer generation?",
+                "context_snippet": "IAM Wildcard Roles & The Illusion of Cloud Perimeters",
+                "target_url": "https://www.linkedin.com/feed/update/urn:li:activity:mock_notif_001/",
+                "timestamp": now - 1800
+            },
+            {
+                "id": "notif_002",
+                "type": "mention",
+                "actor_name": "David Vance",
+                "actor_headline": "Head of Detection Engineering @ CrowdStrike",
+                "text": "Mentioned you in a post: Really appreciating the insights by Akhil Binu on alert fatigue and why ingestion volume is a vanity metric for modern SOCs.",
+                "context_snippet": "Alert Fatigue and the SIEM Ingestion Vanity Metric",
+                "target_url": "https://www.linkedin.com/feed/update/urn:li:activity:mock_notif_002/",
+                "timestamp": now - 3600
+            },
+            {
+                "id": "notif_003",
+                "type": "comment",
+                "actor_name": "Marcus Brody",
+                "actor_headline": "Principal AppSec Architect @ Stripe",
+                "text": "Commented on your post: This framework for developer empathy over shift-left platitudes resonated heavily across our platform teams. Practical reachability analysis saved our sprint.",
+                "context_snippet": "Why Developer Empathy Beats Shift-Left Platitudes",
+                "target_url": "https://www.linkedin.com/feed/update/urn:li:activity:mock_notif_003/",
+                "timestamp": now - 7200
+            }
+        ]
+        return mock_notifs[:limit]
+
+    def reply_to_notification(self, notification: Dict[str, Any], reply_text: str) -> Dict[str, Any]:
+        if self.simulate_rate_limit:
+            return {"status": "error", "error_code": 429, "message": "Rate limit exceeded"}
+        notif_id = notification.get("id", "notif_unknown")
+        actor = notification.get("actor_name", "Author")
+        entry = {
+            "notification_id": notif_id,
+            "actor": actor,
+            "reply_text": reply_text,
+            "target_url": notification.get("target_url"),
+            "timestamp": time.time()
+        }
+        self.comments.append(entry)
+        logger.info(f"[MockLinkedIn] Submitted reply to notification from {actor}:\n  -> \"{reply_text}\"")
+        return {"status": "success", "reply": entry}

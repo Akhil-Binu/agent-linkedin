@@ -62,3 +62,16 @@ class LinkedInConnectorBase(ABC):
         Checks whether a target post card is currently visible in the active DOM.
         """
         return True
+
+    def get_notifications(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Scans incoming notifications for replies, comments, or mentions.
+        Returns a list of structured notification dictionaries.
+        """
+        return []
+
+    def reply_to_notification(self, notification: Dict[str, Any], reply_text: str) -> Dict[str, Any]:
+        """
+        Navigates to a notification thread and submits a follow-up reply.
+        """
+        return {"status": "skipped", "message": "Not implemented"}

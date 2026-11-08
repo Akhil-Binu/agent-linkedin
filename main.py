@@ -460,6 +460,81 @@ class LinkedBotAgent:
 
         print(f"\n✅ Reply tracking cycle complete: {replies_sent} follow-up replies posted.\n")
 
+    def read_notifications_and_reply(self, limit: int = 5, auto_reply: bool = True):
+        """
+        Feature: Read Incoming Notifications & Auto-Reply.
+        Navigates to LinkedIn Notifications feed, parses active replies/mentions,
+        generates contextual peer follow-ups, and submits replies directly to threads.
+        """
+        header = f"🔔 LinkedBot Notifications Auto-Responder & Reply Engine [Max: {limit}] [Mode: {self.active_mode}]"
+        if RICH_AVAILABLE:
+            console.print(Panel(header, style="bold cyan"))
+        else:
+            print(f"\n=== {header} ===\n")
+
+        if not hasattr(self.connector, "get_notifications"):
+            print("⚠️ Current connector does not support reading notifications.")
+            return
+
+        print(f"📥 Scanning incoming notifications for replies and mentions (limit: {limit})...")
+        notifications = self.connector.get_notifications(limit=limit)
+
+        if not notifications:
+            print("ℹ️ No incoming interactive notifications (replies or mentions) found at this moment.")
+            print("   All your discussions and mentions are up to date! 🎉\n")
+            return
+
+        print(f"📋 Discovered {len(notifications)} relevant notification(s) to process:\n")
+        replies_dispatched = 0
+
+        for idx, notif in enumerate(notifications, 1):
+            actor = notif.get("actor_name", "Colleague")
+            notif_text = notif.get("text", "")
+            target_url = notif.get("target_url", "")
+            notif_type = notif.get("type", "reply").upper()
+
+            print(f"--------------------------------------------------------")
+            print(f"🔔 [{idx}/{len(notifications)}] Notification Type: [{notif_type}] from {actor}")
+            print(f"   Excerpt: \"{notif_text[:120]}...\"")
+            if target_url:
+                print(f"   Link: {target_url}")
+
+            if not auto_reply:
+                print("   ℹ️ Auto-reply disabled for this notification. Skipping submission.")
+                continue
+
+            can_comment, c_msg = self.rate_limiter.can_perform("comments")
+            if not can_comment:
+                print(f"   ⚠️ Cannot reply due to rate limiting: {c_msg}")
+                continue
+
+            # Generate bespoke contextual response
+            reply_text = self.generator.generate_thread_reply(
+                original_comment=notif.get("context_snippet") or "Cybersecurity architecture and least privilege",
+                author_reply=notif_text,
+                author_name=actor
+            )
+
+            print(f"\n   💬 Generated Contextual Response:")
+            print(f"      \"{reply_text}\"\n")
+
+            # Submit via connector
+            if hasattr(self.connector, "reply_to_notification"):
+                res = self.connector.reply_to_notification(notif, reply_text)
+                if res.get("status") == "success":
+                    replies_dispatched += 1
+                    self.rate_limiter.record_action("comments")
+                    self.analytics.record_action("notification_reply", notif.get("id"), reply_text, 95.0, mode=self.active_mode)
+                    print(f"   🎯 [SUCCESS] Reply published to {actor}'s notification thread!")
+                elif res.get("status") == "skipped":
+                    print(f"   ℹ️ [SKIPPED] {res.get('message', 'Thread skipped.')}")
+                else:
+                    print(f"   ⚠️ Could not submit reply: {res.get('message', 'unknown error')}")
+
+        print(f"\n========================================================")
+        print(f"✅ Notification cycle complete: {replies_dispatched} follow-up replies published.")
+        print(f"========================================================\n")
+
     def generate_carousel(self, topic: Optional[str] = None, from_bank_id: Optional[str] = None, publish: bool = False):
         """
         Feature 6: AI Carousel (PDF Slide) Generator.
@@ -550,6 +625,11 @@ def main():
     replies_parser.add_argument("--limit", type=int, default=10, help="Number of recent posts to check (default: 10)")
     replies_parser.add_argument("--real", action="store_true", help="Publish to your real LinkedIn profile")
 
+    # Command: notifications
+    notif_parser = subparsers.add_parser("notifications", help="Read incoming LinkedIn notifications and publish replies")
+    notif_parser.add_argument("--limit", type=int, default=5, help="Number of notifications to process (default: 5)")
+    notif_parser.add_argument("--real", action="store_true", help="Interact with your real LinkedIn account")
+
     # Command: bank
     subparsers.add_parser("bank", help="Browse pre-vetted cybersecurity thought leadership posts")
 
@@ -621,6 +701,8 @@ def main():
             bot.generate_carousel(topic=args.topic, from_bank_id=args.from_bank, publish=args.publish)
         elif args.command == "replies":
             bot.check_replies_and_follow_up(limit=getattr(args, "limit", 10))
+        elif args.command == "notifications":
+            bot.read_notifications_and_reply(limit=getattr(args, "limit", 5))
         elif args.command == "bank":
             bot.browse_content_bank()
         elif args.command == "queue":

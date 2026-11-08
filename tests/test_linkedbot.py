@@ -306,5 +306,17 @@ class TestAdvancedFeatures(unittest.TestCase):
         self.assertTrue(str(pdf_path).endswith(".pdf"))
         self.assertGreater(pdf_path.stat().st_size, 5000)
 
+    def test_notifications_reader_and_reply(self):
+        """Feature: Tests incoming notification reading and reply dispatch."""
+        notifications = self.bot.connector.get_notifications(limit=5)
+        self.assertIsInstance(notifications, list)
+        self.assertGreater(len(notifications), 0)
+        self.assertIn("actor_name", notifications[0])
+
+        initial_comments = len(self.bot.rate_limiter.state["actions"]["comments"])
+        self.bot.read_notifications_and_reply(limit=2, auto_reply=True)
+        self.assertEqual(len(self.bot.rate_limiter.state["actions"]["comments"]), initial_comments + 2)
+        self.assertEqual(len(self.bot.connector.comments), 2)
+
 if __name__ == "__main__":
     unittest.main()

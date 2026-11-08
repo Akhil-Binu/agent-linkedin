@@ -27,18 +27,18 @@ class ContentGenerator:
         if (provider == "GEMINI" or gemini_key) and gemini_key:
             try:
                 import requests
-                # Use gemini-1.5-flash
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+                # Use gemini-flash-latest with short timeout
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={gemini_key}"
                 payload = {
                     "contents": [{
                         "parts": [{"text": f"System Instructions: {system_prompt}\n\nTask: {user_prompt}"}]
                     }],
                     "generationConfig": {
                         "temperature": 0.5,
-                        "maxOutputTokens": 200
+                        "maxOutputTokens": 150
                     }
                 }
-                res = requests.post(url, json=payload, timeout=20)
+                res = requests.post(url, json=payload, timeout=6)
                 if res.status_code == 200:
                     data = res.json()
                     candidates = data.get("candidates", [])
@@ -47,10 +47,12 @@ class ContentGenerator:
                         if text:
                             logger.info("Successfully generated contextual comment using Gemini API.")
                             return text.strip()
+                elif res.status_code == 429:
+                    logger.warning("Gemini API rate limit reached (Free tier daily limit exceeded). Seamlessly falling back to rule engine.")
                 else:
-                    logger.warning(f"Gemini API returned status {res.status_code}: {res.text[:120]}")
+                    logger.warning(f"Gemini API returned status {res.status_code}: {res.text[:100]}")
             except Exception as e:
-                logger.warning(f"Gemini call failed ({e}). Falling back to local generation.")
+                logger.warning(f"Gemini call failed or timed out ({e}). Seamlessly falling back to rule engine.")
 
         # Check OpenAI API
         openai_key = self.config.openai_api_key or os.getenv("OPENAI_API_KEY", "")

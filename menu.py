@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
 LinkedBot Interactive Menu Launcher
-Lists all primary features [1] to [6] for convenient execution without remembering CLI flags.
+Lists all primary features [1] to [5] for convenient execution without remembering CLI flags.
 """
 
 import sys
 import os
-import webbrowser
 from pathlib import Path
 
 # Add project root to sys.path
@@ -30,7 +29,7 @@ def print_banner():
     title = (
         "╔══════════════════════════════════════════════════════════════╗\n"
         "║          🤖 LINKEDBOT - AUTONOMOUS LINKEDIN AGENT           ║\n"
-        "║            Interactive Feature Menu: Choose [1-6]           ║\n"
+        "║            Interactive Feature Menu: Choose [1-5]           ║\n"
         "╚══════════════════════════════════════════════════════════════╝"
     )
     if RICH_AVAILABLE:
@@ -45,17 +44,16 @@ def display_menu():
     print("  [3] 🤝 Warm Connection Requests (Personalized Outreach to Commented Authors)")
     print("  [4] 🔄 2-Way Reply Tracker (Continue Dialogues on Active Threads)")
     print("  [5] 📑 AI Carousel Generator (Design 5-Slide PDF Document for LinkedIn)")
-    print("  [6] 🌐 Launch Web Command Center Dashboard (http://127.0.0.1:8000)")
     print("  --------------------------------------------------------------")
-    print("  [7] 📊 View Analytics & Activity History")
-    print("  [8] 🛡️ View Rate Limit & Queue Status")
-    print("  [9] 🔐 Real LinkedIn 1-Time Interactive Login")
+    print("  [6] 📊 View Analytics & Activity History")
+    print("  [7] 🛡️ View Rate Limit & Queue Status")
+    print("  [8] 🔐 Real LinkedIn 1-Time Interactive Login")
     print("  [0] ❌ Exit")
     print()
 
 def ask_choice() -> str:
     try:
-        return input("👉 Enter choice [0-9]: ").strip()
+        return input("👉 Enter choice [0-8]: ").strip()
     except (KeyboardInterrupt, EOFError):
         return "0"
 
@@ -165,18 +163,7 @@ def run_menu():
             input("\nPress Enter to return to menu...")
 
         elif choice == "6":
-            print("\n--- [6] WEB COMMAND CENTER DASHBOARD ---")
-            print("Launching FastAPI Web Command Center at http://127.0.0.1:8000 ...")
-            try:
-                webbrowser.open("http://127.0.0.1:8000")
-            except Exception:
-                pass
-            import uvicorn
-            uvicorn.run("web.server:app", host="127.0.0.1", port=8000, reload=False)
-            break
-
-        elif choice == "7":
-            print("\n--- [7] ANALYTICS & METRICS ---")
+            print("\n--- [6] ANALYTICS & METRICS ---")
             bot = LinkedBotAgent(override_mode="MOCK")
             try:
                 bot.print_analytics()
@@ -184,8 +171,8 @@ def run_menu():
                 bot.close()
             input("\nPress Enter to return to menu...")
 
-        elif choice == "8":
-            print("\n--- [8] RATE LIMIT & SYSTEM STATUS ---")
+        elif choice == "7":
+            print("\n--- [7] RATE LIMIT & SYSTEM STATUS ---")
             bot = LinkedBotAgent(override_mode="MOCK")
             try:
                 bot.print_status()
@@ -193,8 +180,8 @@ def run_menu():
                 bot.close()
             input("\nPress Enter to return to menu...")
 
-        elif choice == "9":
-            print("\n--- [9] REAL LINKEDIN INTERACTIVE LOGIN ---")
+        elif choice == "8":
+            print("\n--- [8] REAL LINKEDIN INTERACTIVE LOGIN ---")
             bot = LinkedBotAgent(override_mode="REAL")
             try:
                 bot.interactive_login()
@@ -206,7 +193,7 @@ def run_menu():
             print("\n👋 Exiting LinkedBot. Happy networking!\n")
             break
         else:
-            print("⚠️ Invalid choice. Please enter a number between 0 and 9.")
+            print("⚠️ Invalid choice. Please enter a number between 0 and 8.")
             input("Press Enter to continue...")
 
 if __name__ == "__main__":

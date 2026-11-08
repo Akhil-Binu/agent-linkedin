@@ -115,11 +115,10 @@ Select a feature to execute:
   [3] 🤝 Warm Connection Requests (Personalized Outreach to Commented Authors)
   [4] 🔄 2-Way Reply Tracker (Continue Dialogues on Active Threads)
   [5] 📑 AI Carousel Generator (Design 5-Slide PDF Document for LinkedIn)
-  [6] 🌐 Launch Web Command Center Dashboard (http://127.0.0.1:8000)
   --------------------------------------------------------------
-  [7] 📊 View Analytics & Activity History
-  [8] 🛡️ View Rate Limit & Queue Status
-  [9] 🔐 Real LinkedIn 1-Time Interactive Login
+  [6] 📊 View Analytics & Activity History
+  [7] 🛡️ View Rate Limit & Queue Status
+  [8] 🔐 Real LinkedIn 1-Time Interactive Login
   [0] ❌ Exit
 ```
 

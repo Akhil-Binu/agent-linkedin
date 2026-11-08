@@ -16,6 +16,29 @@
 
 ---
 
+## 🌐 Real LinkedIn Account Connection (1-Time Setup)
+
+To connect LinkedBot directly to your real LinkedIn profile with full 2FA/checkpoint support:
+
+1. **One-Time Interactive Browser Login:**
+   ```powershell
+   python main.py login
+   ```
+   A real Chromium browser window will open to `https://www.linkedin.com/login`. Log into your actual account (enter 2FA or mobile prompt if enabled). As soon as you hit your feed, LinkedBot verifies your login and permanently saves your authenticated session to `data/linkedin_browser_session`. You never have to log in again.
+
+2. **Run on Real LinkedIn Feed:**
+   ```powershell
+   python main.py run --real
+   ```
+   LinkedBot will open your authentic LinkedIn feed, scroll like a human, read real posts from your network, like matching cybersecurity posts, and type substantive comments with keystroke jitter.
+
+3. **Publish a Real Thought-Leadership Post to Your LinkedIn:**
+   ```powershell
+   python main.py post --from-bank cb_iam_01 --publish --real
+   ```
+
+---
+
 ## 🚀 Quickstart & Commands
 
 Activate the virtual environment:

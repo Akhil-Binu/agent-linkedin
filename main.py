@@ -46,15 +46,16 @@ class LinkedBotAgent:
     Discovers, evaluates, likes, and comments on industry posts,
     drafts thought leadership content, enforces rate limits, and routes to HITL.
     """
-    def __init__(self):
+    def __init__(self, override_mode: Optional[str] = None):
         self.config = load_config()
+        active_mode = override_mode or self.config.linkedin_mode
         self.rate_limiter = RateLimiter(self.config.safety.rate_limits)
         self.evaluator = PostEvaluator(self.config)
         self.generator = ContentGenerator(self.config)
         self.hitl = HITLManager(self.config)
         self.analytics = AnalyticsTracker()
         self.content_bank = ContentBank()
-        self.connector = get_linkedin_connector(self.config.linkedin_mode)
+        self.connector = get_linkedin_connector(active_mode)
 
     def run_engagement_cycle(self):
         """Executes a complete scan & engage run."""
@@ -347,6 +348,16 @@ class LinkedBotAgent:
             print(f"Total Posts:             {metrics['total_posts']}")
             print("------------------------------\n")
 
+    def interactive_login(self):
+        """Launches visible browser for real LinkedIn authentication."""
+        from connectors.playwright_linkedin import PlaywrightLinkedInConnector
+        connector = PlaywrightLinkedInConnector(headless=False)
+        success = connector.interactive_login()
+        if success:
+            print("\n✅ Setup complete! You can now run:")
+            print("   python main.py run --real")
+        return success
+
     def start_schedule(self, interval_hours: float, max_iterations: Optional[int] = None):
         """Runs the continuous scheduler loop."""
         scheduler = AutonomousScheduler(interval_hours=interval_hours)
@@ -356,14 +367,19 @@ def main():
     parser = argparse.ArgumentParser(description="LinkedBot: Autonomous Cybersecurity LinkedIn Growth Agent")
     subparsers = parser.add_subparsers(dest="command")
 
+    # Command: login
+    subparsers.add_parser("login", help="Open a real browser to log into your actual LinkedIn account (1-time setup)")
+
     # Command: run
-    subparsers.add_parser("run", help="Run autonomous feed scan & engagement loop")
+    run_parser = subparsers.add_parser("run", help="Run autonomous feed scan & engagement loop")
+    run_parser.add_argument("--real", action="store_true", help="Use real LinkedIn browser automation")
 
     # Command: post
     post_parser = subparsers.add_parser("post", help="Draft and schedule a thought-leadership post")
     post_parser.add_argument("--topic", type=str, help="Topic for the post", default=None)
     post_parser.add_argument("--from-bank", type=str, help="Post ID from content bank", default=None)
     post_parser.add_argument("--publish", action="store_true", help="Publish directly without HITL staging")
+    post_parser.add_argument("--real", action="store_true", help="Publish to your real LinkedIn profile")
 
     # Command: bank
     subparsers.add_parser("bank", help="Browse pre-vetted cybersecurity thought leadership posts")
@@ -391,9 +407,15 @@ def main():
     subparsers.add_parser("test-cooldown", help="Trigger a simulated 60-minute rate limit cooldown")
 
     args = parser.parse_args()
-    bot = LinkedBotAgent()
+    
+    # Check if --real mode requested
+    is_real = getattr(args, "real", False)
+    mode_override = "REAL" if is_real else None
+    bot = LinkedBotAgent(override_mode=mode_override)
 
-    if args.command == "run":
+    if args.command == "login":
+        bot.interactive_login()
+    elif args.command == "run":
         bot.run_engagement_cycle()
     elif args.command == "post":
         bot.publish_or_draft_post(topic=args.topic, from_bank_id=args.from_bank, direct_publish=args.publish)

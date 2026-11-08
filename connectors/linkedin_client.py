@@ -5,6 +5,7 @@ import requests
 from connectors.base import LinkedInConnectorBase
 from connectors.mock_linkedin import MockLinkedInConnector
 from connectors.browser_linkedin import LinkedInSessionConnector
+from connectors.playwright_linkedin import PlaywrightLinkedInConnector, PLAYWRIGHT_AVAILABLE
 
 logger = logging.getLogger("LinkedBot.LinkedInClient")
 
@@ -97,12 +98,20 @@ class LinkedInLiveClient(LinkedInConnectorBase):
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-def get_linkedin_connector(mode: str = "MOCK") -> LinkedInConnectorBase:
-    """Factory to get the appropriate connector (MOCK, SESSION/BROWSER, API)."""
+def get_linkedin_connector(mode: str = "MOCK", headless: bool = False) -> LinkedInConnectorBase:
+    """Factory to get the appropriate connector (REAL/PLAYWRIGHT, MOCK, BROWSER/SESSION, API)."""
     mode_upper = mode.upper()
-    if mode_upper in ["BROWSER", "SESSION"]:
+    if mode_upper in ["REAL", "PLAYWRIGHT"]:
+        if PLAYWRIGHT_AVAILABLE:
+            logger.info("Initializing Real Playwright Browser Connector (Persistent User Session)")
+            return PlaywrightLinkedInConnector(headless=headless)
+        else:
+            logger.warning("Playwright is not available. Falling back to Mock.")
+
+    elif mode_upper in ["BROWSER", "SESSION"]:
         logger.info("Initializing LinkedIn Authenticated Session Connector (Cookie Mode)")
         return LinkedInSessionConnector()
+
     elif mode_upper == "API":
         token = os.getenv("LINKEDIN_ACCESS_TOKEN", "")
         if token:

@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 import requests
 from pydantic import BaseModel, Field
-from config.settings import AppConfig
+from config.settings import AppConfig, BASE_DIR
 
 logger = logging.getLogger("LinkedBot.HITL")
 
-QUEUE_FILE = Path(__file__).resolve().parent.parent / "hitl_queue.json"
+QUEUE_FILE = BASE_DIR / "hitl_queue.json"
 
 class HITLItem(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])

@@ -1,16 +1,56 @@
 import os
+import sys
 from pathlib import Path
 from typing import List, Dict, Any
 import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-# Load environment variables from .env
-load_dotenv()
+def get_base_dir() -> Path:
+    """Returns the persistent base directory where runtime data, logs, and user configs live."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
 
-CONFIG_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = CONFIG_DIR.parent
-CONFIG_FILE = CONFIG_DIR / "config.yaml"
+def get_bundle_dir() -> Path:
+    """Returns the directory where bundled assets (config, templates) reside."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent.parent
+
+BASE_DIR = get_base_dir()
+BUNDLE_DIR = get_bundle_dir()
+
+# Load environment variables from .env in BASE_DIR, CWD, or default
+env_locations = [BASE_DIR / ".env", Path.cwd() / ".env"]
+loaded_env = False
+for env_path in env_locations:
+    if env_path.exists():
+        load_dotenv(env_path)
+        loaded_env = True
+        break
+if not loaded_env:
+    load_dotenv()
+
+def get_config_path(filename: str = "config.yaml") -> Path:
+    """Resolves config files, falling back to bundled resources when frozen."""
+    # 1. Custom or persistent user config
+    persistent_cfg = BASE_DIR / "config" / filename
+    if persistent_cfg.exists():
+        return persistent_cfg
+    # 2. Current working directory config
+    cwd_cfg = Path.cwd() / "config" / filename
+    if cwd_cfg.exists():
+        return cwd_cfg
+    # 3. Bundled config inside frozen executable
+    bundled_cfg = BUNDLE_DIR / "config" / filename
+    if bundled_cfg.exists():
+        return bundled_cfg
+    return persistent_cfg
+
+CONFIG_DIR = BASE_DIR / "config"
+PROJECT_ROOT = BASE_DIR
+CONFIG_FILE = get_config_path("config.yaml")
 
 class AntiSlopConfig(BaseModel):
     banned_phrases: List[str] = Field(default_factory=list)
@@ -70,7 +110,8 @@ class AppConfig(BaseModel):
     hitl_threshold: int = Field(default=85)
 
 def load_config() -> AppConfig:
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+    config_file = get_config_path("config.yaml")
+    with open(config_file, "r", encoding="utf-8") as f:
         data: Dict[str, Any] = yaml.safe_load(f) or {}
 
     # Bind environment variables

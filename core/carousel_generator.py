@@ -8,10 +8,11 @@ from typing import Dict, Any, List, Optional
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import portrait
+from config.settings import BASE_DIR
 
 logger = logging.getLogger("LinkedBot.Carousel")
 
-OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data" / "carousels"
+OUTPUT_DIR = BASE_DIR / "data" / "carousels"
 
 # Slide Dimensions: LinkedIn 4:5 Portrait Ratio (800 x 1000 pt)
 PAGE_WIDTH = 800

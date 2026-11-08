@@ -2,8 +2,9 @@ import sqlite3
 import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+from config.settings import BASE_DIR
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "analytics.db"
+DB_PATH = BASE_DIR / "data" / "analytics.db"
 
 class AnalyticsTracker:
     """

@@ -3,11 +3,11 @@ import logging
 import time
 from pathlib import Path
 from typing import Dict, Any, Tuple
-from config.settings import RateLimitConfig
+from config.settings import RateLimitConfig, BASE_DIR
 
 logger = logging.getLogger("LinkedBot.RateLimiter")
 
-STATE_FILE = Path(__file__).resolve().parent.parent / "rate_limit_state.json"
+STATE_FILE = BASE_DIR / "rate_limit_state.json"
 
 class RateLimiter:
     """

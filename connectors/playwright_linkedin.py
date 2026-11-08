@@ -13,9 +13,11 @@ except ImportError:
 
 from connectors.base import LinkedInConnectorBase
 
+from config.settings import BASE_DIR
+
 logger = logging.getLogger("LinkedBot.PlaywrightConnector")
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DATA_DIR = BASE_DIR / "data"
 SESSION_DIR = DATA_DIR / "linkedin_browser_session"
 
 class PlaywrightLinkedInConnector(LinkedInConnectorBase):

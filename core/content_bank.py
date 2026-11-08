@@ -2,15 +2,16 @@ import yaml
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import random
+from config.settings import get_config_path
 
-CONTENT_BANK_FILE = Path(__file__).resolve().parent.parent / "config" / "content_bank.yaml"
+CONTENT_BANK_FILE = get_config_path("content_bank.yaml")
 
 class ContentBank:
     """
     Manages pre-vetted, high-authority cybersecurity thought-leadership posts.
     """
-    def __init__(self, file_path: Path = CONTENT_BANK_FILE):
-        self.file_path = file_path
+    def __init__(self, file_path: Optional[Path] = None):
+        self.file_path = file_path or get_config_path("content_bank.yaml")
         self.posts = self._load_posts()
 
     def _load_posts(self) -> List[Dict[str, Any]]:

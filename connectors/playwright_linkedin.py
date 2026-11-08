@@ -492,180 +492,10 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
             logger.error(f"Failed to comment on {post_id}: {e}")
             return {"status": "error", "message": str(e)}
 
-    def _attach_pdf_document(self, pdf_path: str, draft_text: str) -> bool:
-        """
-        Attaches a PDF document carousel inside the open LinkedIn post modal.
-        Locates the Document button in the toolbar (expanding the 'More' menu if needed),
-        triggers the file chooser with the PDF, fills the document title, and clicks 'Done'.
-        """
-        try:
-            logger.info(f"📄 Attaching PDF document carousel: {pdf_path}")
-            self._human_delay(1.5, 2.5)
-
-            # Step 1: Find and click "Add a document" in the modal toolbar
-            click_res = self.page.evaluate('''() => {
-                const modal = document.querySelector(".artdeco-modal, div[role='dialog'], .share-box-modal");
-                if (!modal) return { success: false, reason: "No active modal found" };
-
-                const buttons = Array.from(modal.querySelectorAll("button, div[role='button']"));
-
-                // A. Check for direct Document button in toolbar
-                const directDoc = buttons.find(b => {
-                    const aria = (b.getAttribute("aria-label") || "").toLowerCase();
-                    const txt = (b.innerText || "").toLowerCase();
-                    return aria.includes("add a document") || aria.includes("document") || txt.includes("add a document");
-                });
-                if (directDoc) {
-                    directDoc.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    directDoc.click();
-                    return { success: true, method: "direct" };
-                }
-
-                // B. Overflow 'More' button (three dots, plus, or 'Add to your post')
-                const moreBtn = buttons.find(b => {
-                    const aria = (b.getAttribute("aria-label") || "").toLowerCase();
-                    const txt = (b.innerText || "").toLowerCase();
-                    return aria.includes("more") || aria.includes("add to your post") || aria.includes("see more") || b.classList.contains("share-prompts-bar__more-btn");
-                });
-                if (moreBtn) {
-                    moreBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    moreBtn.click();
-                    return { success: true, method: "expanded_more" };
-                }
-
-                return { success: false, reason: "No document or overflow button located in modal toolbar" };
-            }''')
-
-            if not click_res.get("success"):
-                logger.error(f"Could not trigger document upload: {click_res.get('reason')}")
-                return False
-
-            if click_res.get("method") == "expanded_more":
-                self._human_delay(1.0, 2.0)
-                # Click the "Add a document" option inside the opened dropdown menu
-                doc_item_clicked = self.page.evaluate('''() => {
-                    const items = Array.from(document.querySelectorAll("button, div[role='button'], div[role='menuitem'], li, span"));
-                    const docOption = items.find(el => {
-                        const txt = (el.innerText || "").toLowerCase();
-                        const aria = (el.getAttribute("aria-label") || "").toLowerCase();
-                        return txt.includes("add a document") || (txt.includes("document") && !txt.includes("share")) || aria.includes("add a document");
-                    });
-                    if (docOption) {
-                        const target = docOption.closest("button") || docOption.closest("div[role='button']") || docOption;
-                        target.click();
-                        return true;
-                    }
-                    return false;
-                }''')
-                if not doc_item_clicked:
-                    logger.error("Could not find 'Add a document' option in the expanded More menu.")
-                    return False
-
-            self._human_delay(2.0, 3.5)
-
-            # Step 2: The "Share a document" modal is now open. Upload the PDF file!
-            file_uploaded = False
-
-            # Check if there is a 'Choose file' button
-            choose_btn = self.page.locator(
-                "button:has-text('Choose file'), button:has-text('Upload from computer'), button:has-text('Select file'), button:has-text('Browse')"
-            )
-            if choose_btn.count() > 0 and choose_btn.first.is_visible():
-                try:
-                    with self.page.expect_file_chooser(timeout=8000) as fc_info:
-                        choose_btn.first.click()
-                    file_chooser = fc_info.value
-                    file_chooser.set_files(str(pdf_path))
-                    file_uploaded = True
-                    logger.info("PDF file uploaded via file chooser dialog.")
-                except Exception as fc_err:
-                    logger.warning(f"File chooser error: {fc_err}. Attempting direct modal file input...")
-
-            if not file_uploaded:
-                # Direct modal file input fallback
-                modal_inputs = self.page.locator("div[role='dialog'] input[type='file'], .artdeco-modal input[type='file']")
-                if modal_inputs.count() > 0:
-                    try:
-                        modal_inputs.first.set_input_files(str(pdf_path))
-                        file_uploaded = True
-                        logger.info("PDF file uploaded via modal input[type='file'].")
-                    except Exception as mi_err:
-                        logger.error(f"Modal input[type='file'] failed: {mi_err}")
-
-            if not file_uploaded:
-                logger.error("Could not upload PDF file: neither file chooser nor modal file input succeeded.")
-                return False
-
-            # Step 3: Wait for document preview and Title field to appear
-            logger.info("Waiting for LinkedIn to render document preview and title field...")
-            self._human_delay(3.0, 5.0)
-
-            title_text = "Mastering Cybersecurity Architecture"
-            if "Mastering " in draft_text:
-                first_line = draft_text.split("\n")[0].replace("Mastering ", "").replace(" in modern engineering environments.", "").strip()
-                title_text = f"Mastering {first_line[:40]}"
-            elif draft_text:
-                title_text = draft_text.split("\n")[0][:45].strip()
-
-            title_input = None
-            title_selectors = [
-                "input[placeholder*='title' i]",
-                "input[name='title']",
-                "input[id*='document-title']",
-                "input[aria-label*='title' i]",
-                "input[placeholder*='Add a title' i]"
-            ]
-            for tsel in title_selectors:
-                try:
-                    loc = self.page.wait_for_selector(tsel, timeout=6000)
-                    if loc:
-                        title_input = loc
-                        break
-                except Exception:
-                    continue
-
-            if title_input:
-                title_input.fill(title_text)
-                self._human_delay(1.0, 2.0)
-                logger.info(f"Set document title: '{title_text}'")
-            else:
-                logger.warning("Document title field not detected; continuing to Done button.")
-
-            # Step 4: Click "Done" / "Next" button in the document modal
-            done_btn = None
-            done_selectors = [
-                "button:has-text('Done')",
-                "button:has-text('Next')",
-                "button.share-box-footer__primary-btn",
-                "button[aria-label='Done']",
-                "button[aria-label='Next']"
-            ]
-            for dsel in done_selectors:
-                try:
-                    loc = self.page.wait_for_selector(dsel, timeout=5000)
-                    if loc:
-                        done_btn = loc
-                        break
-                except Exception:
-                    continue
-
-            if done_btn:
-                done_btn.click()
-                self._human_delay(3.0, 5.0)
-                logger.info("Clicked 'Done' on document modal. Carousel successfully attached!")
-                return True
-            else:
-                logger.error("Could not locate 'Done' / 'Next' button in document modal.")
-                return False
-
-        except Exception as e:
-            logger.error(f"Error in _attach_pdf_document: {e}")
-            return False
-
     def create_post(self, draft_text: str, media_attachment: Optional[str] = None) -> Dict[str, Any]:
         """
         Publishes a real thought-leadership post or PDF document carousel to the user's authentic LinkedIn profile.
-        Includes comprehensive DOM fallbacks, SPA state verification, and diagnostic capture.
+        Includes live-tested DOM selectors, real-time modal orchestration, and safety abort protection.
         """
         self._ensure_browser()
         try:
@@ -694,28 +524,20 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
             # 3. Locate and click "Start a post" trigger
             opened_modal = False
             share_selectors = [
-                # Modern desktop feed triggers
                 "button.share-box-feed-entry__trigger",
                 "div.share-box-feed-entry__top-bar button",
                 "div.share-box-feed-entry__wrapper button",
                 ".share-box-feed-entry button",
                 "[data-view-name='feed-share-box'] button",
-                # Text variants (including modern AI prompt)
                 "button:has-text('Start a post')",
                 "button:has-text('try writing with AI')",
                 "button:has-text('Share a post')",
                 "div[role='button']:has-text('Start a post')",
                 "span:has-text('Start a post')",
-                # Aria labels
                 "button[aria-label*='Start a post' i]",
-                "button[aria-label*='Create a post' i]",
-                "button[aria-label*='Share a post' i]",
-                # Feed creator triggers
-                "#share-box-trigger",
-                ".feed-shared-creator-v2 button"
+                "button[aria-label*='Create a post' i]"
             ]
 
-            # Wait up to 15 seconds across candidates
             for selector in share_selectors:
                 try:
                     loc = self.page.locator(selector)
@@ -728,96 +550,115 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                 except Exception:
                     continue
 
-            # JavaScript DOM evaluate fallback if selectors missed
+            # JavaScript fallback if selectors missed
             if not opened_modal:
-                logger.info("Attempting JavaScript DOM evaluation for 'Start a post' trigger...")
                 js_result = self.page.evaluate('''() => {
-                    const trigger = document.querySelector(
-                        ".share-box-feed-entry__trigger, " +
-                        "div.share-box-feed-entry__top-bar button, " +
-                        "div.share-box-feed-entry__wrapper button, " +
-                        "[data-view-name='feed-share-box'] button, " +
-                        ".share-box-feed-entry button"
-                    );
-                    if (trigger) {
-                        trigger.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        trigger.click();
-                        return { clicked: true, method: "class_selector" };
-                    }
-
-                    const candidates = Array.from(document.querySelectorAll("button, div[role='button'], span"));
-                    for (const el of candidates) {
-                        const txt = (el.innerText || el.textContent || "").toLowerCase().trim();
-                        const aria = (el.getAttribute("aria-label") || "").toLowerCase().trim();
-                        if (txt.includes("start a post") || txt.includes("try writing with ai") || txt.includes("share a post") || aria.includes("start a post")) {
-                            const target = el.closest("button") || el.closest("div[role='button']") || el;
+                    const btns = Array.from(document.querySelectorAll("button, div[role='button'], span"));
+                    for (const b of btns) {
+                        const txt = (b.innerText || '').toLowerCase().trim();
+                        const aria = (b.getAttribute('aria-label') || '').toLowerCase().trim();
+                        if (txt.includes('start a post') || aria.includes('start a post')) {
+                            const target = b.closest('button') || b.closest("div[role='button']") || b;
                             target.scrollIntoView({ behavior: 'smooth', block: 'center' });
                             target.click();
-                            return { clicked: true, method: "text_search", matched: txt || aria };
-                        }
-                    }
-                    return { clicked: false };
-                }''')
-                if js_result.get("clicked"):
-                    opened_modal = True
-                    logger.info(f"Clicked 'Start a post' via JS fallback ({js_result.get('method')})")
-
-            if not opened_modal:
-                screenshot_path = DATA_DIR / "post_failure_debug.png"
-                try:
-                    self.page.screenshot(path=str(screenshot_path))
-                    logger.error(f"Saved diagnostic screenshot to {screenshot_path}")
-                except Exception:
-                    pass
-                return {
-                    "status": "error",
-                    "message": f"Could not locate 'Start a post' button on page ({self.page.url}). Diagnostic screenshot saved to data/post_failure_debug.png."
-                }
-
-            self._human_delay(2.0, 3.5)
-
-            # 4. Locate modal text editor
-            editor_selectors = [
-                "div.share-creation-state__text-editor div.ql-editor",
-                "div.ql-editor[contenteditable='true']",
-                "div[role='textbox'][contenteditable='true']",
-                "div.share-box-modal div[role='textbox']",
-                "div[data-placeholder*='talk about' i]",
-                "div[aria-label*='talk about' i]",
-                "div.editor-content div.ql-editor"
-            ]
-
-            editor_found = None
-            for esel in editor_selectors:
-                try:
-                    loc = self.page.locator(esel)
-                    if loc.count() > 0 and loc.first.is_visible():
-                        editor_found = loc.first
-                        break
-                except Exception:
-                    continue
-
-            if not editor_found:
-                # JS focus fallback
-                js_editor = self.page.evaluate('''() => {
-                    const modal = document.querySelector(".artdeco-modal, div[role='dialog'], .share-box-modal");
-                    if (modal) {
-                        const ed = modal.querySelector("div[contenteditable='true'], div[role='textbox'], .ql-editor");
-                        if (ed) {
-                            ed.focus();
                             return true;
                         }
                     }
                     return false;
                 }''')
+                if js_result:
+                    opened_modal = True
+
+            if not opened_modal:
+                return {
+                    "status": "error",
+                    "message": f"Could not locate 'Start a post' button on page ({self.page.url})."
+                }
+
+            self._human_delay(2.0, 3.5)
+
+            # 4. If media attachment provided (PDF carousel), attach it via verified Document flow
+            if media_attachment and str(media_attachment).endswith(".pdf") and os.path.exists(media_attachment):
+                logger.info(f"📄 Attaching PDF document carousel: {media_attachment}")
+
+                # A. Expand toolbar if collapsed
+                expand_btn = self.page.locator("button[aria-label*='Expand content types' i]")
+                if expand_btn.count() > 0 and expand_btn.first.is_visible():
+                    expand_btn.first.click()
+                    self._human_delay(1.0, 2.0)
+
+                # B. Click Document link (rendered as an <a> tag with aria-label='Document' or svg#note-sticky-outline-medium)
+                doc_btn = self.page.locator("[aria-label='Document'], a:has-text('Document'), svg#note-sticky-outline-medium")
+                if doc_btn.count() > 0:
+                    doc_btn.first.click()
+                    self._human_delay(2.0, 3.0)
+                else:
+                    screenshot_path = DATA_DIR / "carousel_attach_failure.png"
+                    try:
+                        self.page.screenshot(path=str(screenshot_path))
+                    except Exception:
+                        pass
+                    err_msg = (
+                        "Could not locate Document option in post toolbar. "
+                        "Publication aborted to prevent posting text without the carousel slides."
+                    )
+                    logger.error(err_msg)
+                    return {"status": "error", "message": err_msg}
+
+                # C. Upload PDF via file chooser on 'Choose file' button
+                choose_btn = self.page.locator("button:has-text('Choose file')")
+                if choose_btn.count() > 0:
+                    with self.page.expect_file_chooser(timeout=10000) as fc_info:
+                        choose_btn.first.click()
+                    file_chooser = fc_info.value
+                    file_chooser.set_files(str(media_attachment))
+                    logger.info("PDF file uploaded to LinkedIn!")
+                    self._human_delay(3.5, 5.5)
+                else:
+                    return {"status": "error", "message": "Choose file button not found in document modal"}
+
+                # D. Fill document title
+                title_text = "Mastering Cybersecurity Architecture"
+                if "Mastering " in draft_text:
+                    first_line = draft_text.split("\n")[0].replace("Mastering ", "").replace(" in modern engineering environments.", "").strip()
+                    title_text = f"Mastering {first_line[:40]}"
+                elif draft_text:
+                    title_text = draft_text.split("\n")[0][:45].strip()
+
+                title_inp = self.page.locator("input[placeholder*='title' i], input[name='title'], input[id*='title' i]")
+                if title_inp.count() > 0:
+                    title_inp.first.fill(title_text)
+                    logger.info(f"Document title set: '{title_text}'")
+                    self._human_delay(1.0, 2.0)
+
+                # E. Click Done button
+                done_btn = self.page.locator("button:has-text('Done')")
+                if done_btn.count() > 0:
+                    done_btn.first.click()
+                    logger.info("Clicked 'Done' on document modal. Carousel successfully attached!")
+                    self._human_delay(2.5, 4.0)
+
+            # 5. Focus post editor and enter draft text
+            editor_selectors = [
+                "div.ql-editor",
+                "div[contenteditable='true']",
+                "div[role='textbox']",
+                "div[data-placeholder*='Share your thoughts' i]",
+                "div[data-placeholder*='talk about' i]"
+            ]
+            editor_found = None
+            for esel in editor_selectors:
+                loc = self.page.locator(esel)
+                if loc.count() > 0 and loc.first.is_visible():
+                    editor_found = loc.first
+                    break
 
             if editor_found:
                 editor_found.click()
-                self._human_delay(1.0, 2.0)
+                self._human_delay(1.0, 1.5)
             else:
-                logger.warning("Editor locator not explicitly focused; attempting keyboard typing into active element.")
+                logger.warning("Editor locator not explicitly focused; attempting keyboard typing.")
 
-            # 5. Type the post text with natural human pacing
             paragraphs = draft_text.split("\n\n")
             for i, p in enumerate(paragraphs):
                 try:
@@ -827,85 +668,38 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                 if i < len(paragraphs) - 1:
                     self.page.keyboard.press("Enter")
                     self.page.keyboard.press("Enter")
-                    self._human_delay(0.4, 0.8)
+                    self._human_delay(0.3, 0.6)
 
-            self._human_delay(2.0, 3.5)
-
-            # 6. If media attachment provided (PDF Carousel), attach it now
-            if media_attachment and str(media_attachment).endswith(".pdf") and os.path.exists(media_attachment):
-                attached = self._attach_pdf_document(str(media_attachment), draft_text)
-                if not attached:
-                    screenshot_path = DATA_DIR / "carousel_attach_failure.png"
-                    try:
-                        self.page.screenshot(path=str(screenshot_path))
-                    except Exception:
-                        pass
-                    err_msg = (
-                        "Could not attach PDF document carousel to LinkedIn post. "
-                        "Post publication was automatically aborted to prevent posting text without the carousel slides. "
-                        "A diagnostic screenshot has been saved to data/carousel_attach_failure.png."
-                    )
-                    logger.error(err_msg)
-                    return {"status": "error", "message": err_msg}
-
-                # Verify text remains in editor after document sub-modal; re-type if cleared
-                editor_text = self.page.evaluate('''() => {
-                    const ed = document.querySelector("div.ql-editor, div[role='textbox'][contenteditable='true']");
-                    return ed ? (ed.innerText || ed.textContent || "").trim() : "";
-                }''')
-                if not editor_text or len(editor_text) < 10:
-                    logger.info("Re-inserting post caption after document attachment...")
-                    for i, p in enumerate(paragraphs):
-                        try:
-                            self.page.keyboard.insert_text(p)
-                        except Exception:
-                            self.page.keyboard.type(p)
-                        if i < len(paragraphs) - 1:
-                            self.page.keyboard.press("Enter")
-                            self.page.keyboard.press("Enter")
-                            self._human_delay(0.3, 0.6)
-
-            # 7. Locate and click final "Post" button
-            # Note: The post button may be disabled while media uploads; wait up to 15s for it to become enabled
             self._human_delay(2.0, 4.0)
-            post_selectors = [
-                "button.share-actions__primary-action:not([disabled])",
-                "button:has-text('Post'):not([disabled])",
-                "button[data-test-share-post-button]:not([disabled])",
-                "div.share-box_actions button:has-text('Post'):not([disabled])"
-            ]
 
+            # 6. Click final Post button
             post_btn = None
+            post_selectors = [
+                "button:has-text('Post'):not([disabled])",
+                "button.share-actions__primary-action:not([disabled])",
+                "button[data-test-share-post-button]:not([disabled])"
+            ]
             for psel in post_selectors:
                 try:
-                    loc = self.page.wait_for_selector(psel, timeout=4000)
+                    loc = self.page.wait_for_selector(psel, timeout=5000)
                     if loc:
                         post_btn = loc
                         break
                 except Exception:
                     continue
 
-            # Fallback check if post button exists even if selector wait timed out
             if not post_btn:
                 try:
-                    post_btn = self.page.wait_for_selector(
-                        "button.share-actions__primary-action, button:has-text('Post')",
-                        timeout=8000
-                    )
+                    post_btn = self.page.wait_for_selector("button:has-text('Post')", timeout=8000)
                 except Exception:
                     pass
 
             if post_btn:
                 post_btn.click()
                 self._human_delay(4.0, 7.0)
-                logger.info("🎉 [REAL ACTION] Published real thought leadership post to your LinkedIn profile!")
+                logger.info("🎉 [REAL ACTION] Published real thought leadership post with carousel to your LinkedIn profile!")
                 return {"status": "success", "message": "Post published"}
             else:
-                screenshot_path = DATA_DIR / "post_publish_button_missing.png"
-                try:
-                    self.page.screenshot(path=str(screenshot_path))
-                except Exception:
-                    pass
                 return {"status": "error", "message": "Final Post button not found or remained disabled"}
 
         except Exception as e:

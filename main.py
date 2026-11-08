@@ -382,6 +382,11 @@ def main():
     sched_parser.add_argument("--interval-hours", type=float, default=4.0, help="Hours between cycles (default: 4.0)")
     sched_parser.add_argument("--iterations", type=int, default=None, help="Stop after N cycles (default: infinite)")
 
+    # Command: web
+    web_parser = subparsers.add_parser("web", help="Launch the LinkedBot Web Command Center")
+    web_parser.add_argument("--port", type=int, default=8000, help="Web server port (default: 8000)")
+    web_parser.add_argument("--host", type=str, default="127.0.0.1", help="Host address (default: 127.0.0.1)")
+
     # Command: test-cooldown
     subparsers.add_parser("test-cooldown", help="Trigger a simulated 60-minute rate limit cooldown")
 
@@ -402,6 +407,10 @@ def main():
         bot.print_analytics()
     elif args.command == "schedule":
         bot.start_schedule(interval_hours=args.interval_hours, max_iterations=args.iterations)
+    elif args.command == "web":
+        import uvicorn
+        print(f"\n🌐 Starting LinkedBot Web Command Center at http://{args.host}:{args.port}")
+        uvicorn.run("web.server:app", host=args.host, port=args.port, reload=False)
     elif args.command == "test-cooldown":
         bot.rate_limiter.trigger_rate_limit_backoff("Simulated test 429 trigger")
         bot.print_status()

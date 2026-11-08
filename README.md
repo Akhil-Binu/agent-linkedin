@@ -34,7 +34,14 @@ python main.py run
 python main.py status
 ```
 
-### 3. Browse Cybersecurity Content Bank
+### 3. Launch the Web Command Center UI
+Open the full visual control dashboard with real-time approval cards, content studio, and analytics:
+```powershell
+python main.py web --port 8000
+```
+Then navigate to `http://127.0.0.1:8000` in your browser.
+
+### 4. Browse Cybersecurity Content Bank
 View pre-vetted, high-authority thought-leadership posts across 6 sub-domains:
 ```powershell
 python main.py bank

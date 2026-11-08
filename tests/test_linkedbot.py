@@ -183,5 +183,18 @@ class TestSchedulerQuietHours(unittest.TestCase):
         result = sched.is_quiet_hours()
         self.assertIsInstance(result, bool)
 
+class TestWebEndpoints(unittest.TestCase):
+    def test_web_status_and_bank(self):
+        from web.server import get_status, get_bank, get_queue
+        status = get_status()
+        self.assertEqual(status["domain"], "Cybersecurity")
+        self.assertIn("mode", status)
+
+        bank = get_bank()
+        self.assertGreater(len(bank), 0)
+
+        queue = get_queue()
+        self.assertIsInstance(queue, list)
+
 if __name__ == "__main__":
     unittest.main()

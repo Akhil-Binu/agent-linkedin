@@ -558,7 +558,16 @@ def main():
     # Command: test-cooldown
     subparsers.add_parser("test-cooldown", help="Trigger a simulated 60-minute rate limit cooldown")
 
+    # Command: menu
+    subparsers.add_parser("menu", help="Launch interactive feature menu [1 to 6]")
+
     args = parser.parse_args()
+
+    # Launch interactive menu if no command or 'menu' is specified
+    if args.command in ["menu", None]:
+        from menu import run_menu
+        run_menu()
+        return
     
     # Check if --real mode requested
     is_real = getattr(args, "real", False)
@@ -612,6 +621,10 @@ def main():
         elif args.command == "test-cooldown":
             bot.rate_limiter.trigger_rate_limit_backoff("Simulated test 429 trigger")
             bot.print_status()
+        elif args.command == "menu" or not args.command:
+            bot.close()
+            from menu import run_menu
+            run_menu()
         else:
             parser.print_help()
     finally:

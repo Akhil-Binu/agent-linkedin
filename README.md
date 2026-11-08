@@ -93,7 +93,39 @@ LINKEDIN_MODE=REAL
 
 ---
 
-## 🕹️ CLI Usage & Commands
+## 🕹️ Interactive Feature Menu (Quickest Way to Run)
+
+You can launch the interactive control menu listing features **[1] to [6]** without memorizing CLI arguments:
+
+```powershell
+# Option A: Run interactive menu script
+python menu.py
+
+# Option B: Run main.py (defaults to menu when no flags passed)
+python main.py
+
+# Option C: Double-click or run Windows launcher
+.\run.bat
+```
+
+```text
+Select a feature to execute:
+  [1] 🔎 Targeted Search & Engagement (Latest #Cybersecurity Posts, 15 Comments & 20 Likes)
+  [2] 🚀 General Feed Engagement Loop (Must-Rule: 15 Comments & 20 Likes)
+  [3] 🤝 Warm Connection Requests (Personalized Outreach to Commented Authors)
+  [4] 🔄 2-Way Reply Tracker (Continue Dialogues on Active Threads)
+  [5] 📑 AI Carousel Generator (Design 5-Slide PDF Document for LinkedIn)
+  [6] 🌐 Launch Web Command Center Dashboard (http://127.0.0.1:8000)
+  --------------------------------------------------------------
+  [7] 📊 View Analytics & Activity History
+  [8] 🛡️ View Rate Limit & Queue Status
+  [9] 🔐 Real LinkedIn 1-Time Interactive Login
+  [0] ❌ Exit
+```
+
+---
+
+## 💻 Direct CLI Usage & Commands
 
 ### 1. Authenticate LinkedIn Account (One-Time Setup)
 Opens a dedicated Chromium window for logging in with your real LinkedIn account (handles 2FA/SMS checkpoints). Saves the session securely to `data/linkedin_browser_session`:

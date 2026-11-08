@@ -82,6 +82,102 @@ MOCK_CYBERSECURITY_FEED = [
         "created_at": time.time() - 10800,
         "likes_count": 3,
         "comments_count": 1
+    },
+    {
+        "post_id": "urn:li:post:1006",
+        "author": {
+            "name": "Marcus Vance",
+            "headline": "VP of Cybersecurity @ Sentinel Financial | CISO Advisor",
+            "profile_url": "https://linkedin.com/in/marcus-vance-ciso"
+        },
+        "content": (
+            "The critical flaw in most vulnerability management programs is treating CVSS score as an emergency ticket. "
+            "If an exploit exists in a library that has zero network reachability and cannot be invoked at runtime, patching it immediately is operational theater. "
+            "How does your team distinguish theoretical CVE score from actual exploit path?"
+        ),
+        "created_at": time.time() - 12000,
+        "likes_count": 94,
+        "comments_count": 19
+    },
+    {
+        "post_id": "urn:li:post:1007",
+        "author": {
+            "name": "Alex Chen",
+            "headline": "DevSecOps Lead @ ScaleApp | AppSec & CI/CD Security",
+            "profile_url": "https://linkedin.com/in/alex-chen-devsecops"
+        },
+        "content": (
+            "Hardcoded AWS secrets in private GitHub repos remain our #1 vector for credential leakage. "
+            "Blocking developers at pre-commit with trufflehog and gitleaks is good, but without automated secret rotation, revoked credentials just linger in git history. "
+            "What automated revocation patterns have worked best for your engineering teams?"
+        ),
+        "created_at": time.time() - 14000,
+        "likes_count": 67,
+        "comments_count": 14
+    },
+    {
+        "post_id": "urn:li:post:1008",
+        "author": {
+            "name": "Rachel Adams",
+            "headline": "Senior Threat Hunter & Malware Analyst",
+            "profile_url": "https://linkedin.com/in/rachel-adams-threat"
+        },
+        "content": (
+            "Ransomware operators are increasingly bypassing traditional EDR agents using Bring Your Own Vulnerable Driver (BYOVD) attacks. "
+            "If kernel-level driver blocklists aren't strictly enforced across all production endpoints, sophisticated malware will simply blind your security telemetry. "
+            "Is your threat intelligence team tracking driver abuse in your environment?"
+        ),
+        "created_at": time.time() - 16000,
+        "likes_count": 112,
+        "comments_count": 28
+    },
+    {
+        "post_id": "urn:li:post:1009",
+        "author": {
+            "name": "Jason Miller",
+            "headline": "Chief Security Officer @ Apex Cloud",
+            "profile_url": "https://linkedin.com/in/jason-miller-cso"
+        },
+        "content": (
+            "Zero Trust is not a product you purchase from a vendor booth at RSA. "
+            "Zero Trust is the architectural discipline of assuming your internal network is already compromised, enforcing mutual TLS, and verifying identity on every single microservice hop. "
+            "What has been your biggest cultural obstacle in deploying least privilege across legacy microservices?"
+        ),
+        "created_at": time.time() - 18000,
+        "likes_count": 145,
+        "comments_count": 42
+    },
+    {
+        "post_id": "urn:li:post:1010",
+        "author": {
+            "name": "Priya Patel",
+            "headline": "Staff AppSec Architect | API Security & OWASP Contributor",
+            "profile_url": "https://linkedin.com/in/priya-patel-appsec"
+        },
+        "content": (
+            "Broken Object Level Authorization (BOLA) remains the most dangerous and rampant API vulnerability in modern SaaS platforms. "
+            "WAFs and API gateways can inspect syntax all day, but they cannot verify whether User A has permission to view Record ID 5492 belonging to User B. "
+            "How are your security architects testing authorization logic inside automated CI tests?"
+        ),
+        "created_at": time.time() - 20000,
+        "likes_count": 178,
+        "comments_count": 51
+    },
+    {
+        "post_id": "urn:li:post:1011",
+        "author": {
+            "name": "Daniel Thorne",
+            "headline": "AI Security Researcher | LLM Red Teaming & Agent Safety",
+            "profile_url": "https://linkedin.com/in/daniel-thorne-aisec"
+        },
+        "content": (
+            "Prompt injection is not an LLM hallucination—it is unvalidated input execution. "
+            "When you connect an LLM to internal database APIs and email systems without sandboxed runtime permissions, an untrusted prompt can exfiltrate sensitive records in seconds. "
+            "What isolation boundaries are you enforcing between your autonomous agents and production datastores?"
+        ),
+        "created_at": time.time() - 22000,
+        "likes_count": 204,
+        "comments_count": 63
     }
 ]
 

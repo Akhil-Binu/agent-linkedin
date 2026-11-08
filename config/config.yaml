@@ -10,6 +10,8 @@ niches:
 target_keywords:
   - "cybersecurity"
   - "infosec"
+  - "security"
+  - "cyber"
   - "cloud security"
   - "appsec"
   - "devsecops"
@@ -22,11 +24,24 @@ target_keywords:
   - "fido2"
   - "phishing"
   - "threat intelligence"
+  - "threat intel"
   - "vulnerability"
+  - "vulnerabilities"
   - "exploit"
+  - "cve"
+  - "malware"
+  - "ransomware"
   - "detection"
   - "penetration testing"
+  - "pentest"
   - "siem"
+  - "edr"
+  - "xdr"
+  - "red team"
+  - "blue team"
+  - "least privilege"
+  - "rce"
+  - "owasp"
 
 target_personas:
   - "Chief Information Security Officer (CISO)"
@@ -88,10 +103,10 @@ posting_rules:
 
 safety:
   rate_limits:
-    max_likes_per_hour: 10
-    max_likes_per_day: 35
-    max_comments_per_hour: 5
-    max_comments_per_day: 15
-    max_posts_per_day: 2
+    max_likes_per_hour: 40
+    max_likes_per_day: 100
+    max_comments_per_hour: 20
+    max_comments_per_day: 50
+    max_posts_per_day: 5
     backoff_cooldown_seconds: 3600 # 60 minutes on rate limit or API block
   confidence_threshold_auto_engage: 85 # < 85% routes to HITL approval queue

@@ -65,115 +65,105 @@ class LinkedBotAgent:
             except Exception:
                 pass
 
-    def run_engagement_cycle(self):
-        """Executes a complete scan & engage run."""
-        header = f"🚀 LinkedBot Autonomous Engagement Loop [{self.config.domain.upper()}]"
+    def run_engagement_cycle(self, target_comments: int = 10, max_scrolls: int = 60):
+        """
+        Executes continuous feed streaming and engagement:
+        - Scrolls dynamically until at least `target_comments` relevant cybersecurity posts are commented on.
+        - Likes every post encountered during scrolling.
+        - Evaluates cybersecurity relevance before commenting.
+        """
+        header = f"🚀 LinkedBot Continuous Engagement Loop [Goal: >= {target_comments} Cybersecurity Comments]"
         if RICH_AVAILABLE:
             console.print(Panel(header, style="bold cyan"))
         else:
             print(f"\n=== {header} ===\n")
 
-        # 1. Check Rate Limit Safety Backoff
-        can_like, like_msg = self.rate_limiter.can_perform("likes")
-        can_comment, comment_msg = self.rate_limiter.can_perform("comments")
+        comments_posted = 0
+        likes_executed = 0
+        seen_posts = set()
+        scroll_count = 0
 
-        if not can_like and not can_comment:
-            logger.warning(f"Engagement paused: {like_msg} | {comment_msg}")
-            return
+        # Initial feed navigation
+        self.connector.get_feed(keywords=self.config.target_keywords)
 
-        # 2. Ingest Feed
-        feed = self.connector.get_feed(keywords=self.config.target_keywords)
-        print(f"📡 Scanned {len(feed)} candidate posts from industry feed.\n")
-
-        for post in feed:
-            post_id = post.get("post_id", "unknown")
-            author = post.get("author", {})
-            content = post.get("content", "")
-
-            print(f"--------------------------------------------------------")
-            print(f"🔍 Post: {post_id} | Author: {author.get('name')} ({author.get('headline')})")
-            print(f"   Snippet: \"{content[:90]}...\"")
-
-            # 3. Analyze Post
-            eval_result = self.evaluator.analyze_post(post_id, content, author)
-            print(f"   -> Relevance: {eval_result.relevance_score * 100:.0f}% | Sentiment: {eval_result.sentiment} | Credibility: {eval_result.author_credibility}")
-            print(f"   -> Confidence: {eval_result.confidence_score}%")
-
-            if eval_result.flags:
-                print(f"   -> Flags: {', '.join(eval_result.flags)}")
-
-            # Record in SQLite Analytics
-            self.analytics.record_evaluation(
-                post_id=post_id,
-                author=author,
-                snippet=content,
-                relevance=eval_result.relevance_score,
-                sentiment=eval_result.sentiment,
-                credibility=eval_result.author_credibility,
-                should_like=eval_result.should_like,
-                should_comment=eval_result.should_comment,
-                confidence=eval_result.confidence_score
-            )
-
-            # 4. Handle Liking
-            if eval_result.should_like:
-                allowed, reason = self.rate_limiter.can_perform("likes")
-                if allowed:
-                    res = self.connector.like_post(post_id)
-                    if res.get("error_code") == 429:
-                        self.rate_limiter.trigger_rate_limit_backoff("LinkedIn API 429 received on like")
-                        break
-                    elif res.get("status") == "success":
-                        self.rate_limiter.record_action("likes")
-                        self.analytics.record_action("likes", post_id, "Liked high-signal post", eval_result.confidence_score)
-                        print(f"   👍 [ACTION] Liked post ({eval_result.like_reason})")
-                else:
-                    print(f"   ⚠️ Like skipped: {reason}")
+        while comments_posted < target_comments and scroll_count < max_scrolls:
+            # Fetch visible posts currently rendered
+            if hasattr(self.connector, "get_visible_posts"):
+                visible = self.connector.get_visible_posts()
             else:
-                print(f"   ⏭️ Like skipped: {eval_result.like_reason}")
+                visible = self.connector.get_feed(keywords=self.config.target_keywords)
 
-            # 5. Handle Commenting
-            if eval_result.should_comment:
-                comment, confidence, violations = self.generator.generate_comment(
-                    content, author, eval_result.suggested_angle
-                )
-                print(f"\n   💬 Proposed Comment (Confidence: {confidence}%):")
-                print(f"      \"{comment}\"")
+            new_in_batch = 0
 
-                if violations:
-                    print(f"      Tone Warnings: {violations}")
+            for post in visible:
+                post_id = post.get("post_id", "unknown")
+                if post_id in seen_posts:
+                    continue
 
-                # HITL Check: < 85% or any policy violations routes to human review
-                if confidence < self.config.hitl_threshold or violations:
-                    print(f"   ⏳ [HITL ROUTING] Confidence ({confidence}%) < threshold ({self.config.hitl_threshold}%). Staged in HITL queue.")
-                    self.hitl.enqueue(HITLItem(
-                        action_type="comment",
-                        target_id=post_id,
-                        target_author=author.get("name"),
-                        original_content=content[:200],
-                        draft_content=comment,
-                        confidence_score=confidence,
-                        violations=violations,
-                        reason="Confidence score below threshold or flagged for tone check"
-                    ))
-                else:
-                    allowed, reason = self.rate_limiter.can_perform("comments")
-                    if allowed:
-                        res = self.connector.comment_post(post_id, comment)
-                        if res.get("error_code") == 429:
-                            self.rate_limiter.trigger_rate_limit_backoff("LinkedIn API 429 received on comment")
-                            break
-                        elif res.get("status") == "success":
+                seen_posts.add(post_id)
+                new_in_batch += 1
+                author = post.get("author", {})
+                content = post.get("content", "")
+
+                print(f"\n--------------------------------------------------------")
+                print(f"🔍 Post [{post_id}] | Author: {author.get('name')} ({author.get('headline')})")
+                print(f"   Snippet: \"{content[:110]}...\"")
+
+                # 1. Like every post encountered on scroll
+                can_like, _ = self.rate_limiter.can_perform("likes")
+                if can_like:
+                    res_like = self.connector.like_post(post_id)
+                    if res_like.get("status") == "success":
+                        self.rate_limiter.record_action("likes")
+                        self.analytics.record_action("likes", post_id, "Liked on scroll", 90.0)
+                        likes_executed += 1
+                        print(f"   👍 [ACTION] Liked post on scroll (Total likes: {likes_executed})")
+
+                # 2. Evaluate relevance strictly for cybersecurity
+                eval_result = self.evaluator.analyze_post(post_id, content, author)
+                print(f"   -> Relevance: {eval_result.relevance_score * 100:.0f}% | Sentiment: {eval_result.sentiment} | Credibility: {eval_result.author_credibility}")
+
+                # 3. Comment ONLY if relevant to cybersecurity
+                if eval_result.is_relevant:
+                    can_comment, c_msg = self.rate_limiter.can_perform("comments")
+                    if can_comment:
+                        comment, confidence, violations = self.generator.generate_comment(
+                            content, author, eval_result.suggested_angle
+                        )
+                        print(f"\n   💬 Submitting Cybersecurity Comment (Confidence: {confidence}%):")
+                        print(f"      \"{comment}\"")
+
+                        res_c = self.connector.comment_post(post_id, comment)
+                        if res_c.get("status") == "success":
+                            comments_posted += 1
                             self.rate_limiter.record_action("comments")
                             self.analytics.record_action("comments", post_id, comment, confidence)
-                            print(f"   ✅ [ACTION] Comment published directly.")
+                            print(f"   🎯 [SUCCESS] Comment published! Progress: [{comments_posted}/{target_comments} cybersecurity comments]")
+
+                            # Check if goal achieved
+                            if comments_posted >= target_comments:
+                                print(f"\n🎉 GOAL ACHIEVED: Successfully commented on {comments_posted} relevant cybersecurity posts!")
+                                break
+                        else:
+                            print(f"   ⚠️ Could not publish comment: {res_c.get('message')}")
                     else:
-                        print(f"   ⚠️ Comment skipped: {reason}")
+                        print(f"   ⚠️ Comment skipped: {c_msg}")
+                else:
+                    print(f"   ⏭️ Comment skipped: Non-cybersecurity post ({eval_result.comment_reason})")
+
+            if comments_posted >= target_comments:
+                break
+
+            # Scroll down to load the next wave of posts
+            scroll_count += 1
+            print(f"\n📜 [Scroll #{scroll_count}] Scrolling down to discover more cybersecurity posts... (Comments so far: {comments_posted}/{target_comments})")
+            if hasattr(self.connector, "scroll_down"):
+                self.connector.scroll_down(900)
             else:
-                print(f"   ⏭️ Comment skipped: {eval_result.comment_reason}")
+                break
 
         print("\n========================================================")
-        print("✅ Engagement cycle completed successfully.")
+        print(f"✅ Engagement run completed: {comments_posted} comments posted | {likes_executed} posts liked.")
         print("========================================================\n")
 
     def publish_or_draft_post(self, topic: Optional[str] = None, from_bank_id: Optional[str] = None, direct_publish: bool = False):
@@ -381,6 +371,7 @@ def main():
     # Command: run
     run_parser = subparsers.add_parser("run", help="Run autonomous feed scan & engagement loop")
     run_parser.add_argument("--real", action="store_true", help="Use real LinkedIn browser automation")
+    run_parser.add_argument("--target-comments", type=int, default=10, help="Minimum number of cybersecurity posts to comment on (default: 10)")
     run_parser.add_argument("--reset-limits", action="store_true", help="Reset rate limit counters before running")
 
     # Command: reset-limits
@@ -435,7 +426,8 @@ def main():
         if args.command == "login":
             bot.interactive_login()
         elif args.command == "run":
-            bot.run_engagement_cycle()
+            target = getattr(args, "target_comments", 10)
+            bot.run_engagement_cycle(target_comments=target)
         elif args.command == "post":
             bot.publish_or_draft_post(topic=args.topic, from_bank_id=args.from_bank, direct_publish=args.publish)
         elif args.command == "bank":

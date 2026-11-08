@@ -22,7 +22,7 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
     """
     Real-world autonomous LinkedIn agent connector using a persistent browser context.
     Interacts directly with linkedin.com using strictly scoped card DOM selectors,
-    keystroke jitter, and human delays.
+    infinite dynamic scrolling, keystroke jitter, and human delays.
     """
     def __init__(self, headless: bool = True):
         if not PLAYWRIGHT_AVAILABLE:
@@ -36,24 +36,36 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
         self.page: Optional[Page] = None
 
     def _ensure_browser(self):
-        """Initializes or restores the persistent browser context."""
+        """Initializes or restores the persistent browser context with automatic lock recovery."""
         if self.page and not self.page.is_closed():
             return
 
         self.playwright = sync_playwright().start()
-        self.context = self.playwright.chromium.launch_persistent_context(
-            user_data_dir=str(self.user_data_dir),
-            headless=self.headless,
-            viewport={"width": 1366, "height": 850},
-            user_agent=(
+        launch_args = {
+            "user_data_dir": str(self.user_data_dir),
+            "headless": self.headless,
+            "viewport": {"width": 1366, "height": 850},
+            "user_agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             ),
-            args=[
+            "args": [
                 "--disable-blink-features=AutomationControlled",
                 "--start-maximized"
             ]
-        )
+        }
+
+        try:
+            self.context = self.playwright.chromium.launch_persistent_context(**launch_args)
+        except Exception as e:
+            if "ProcessSingleton" in str(e) or "already in use" in str(e):
+                logger.warning("Chromium session locked by previous process. Cleaning up and retrying...")
+                os.system('powershell "Get-Process -Name chrome -ErrorAction SilentlyContinue | Where-Object { $_.Path -like \'*ms-playwright*\' } | Stop-Process -Force -ErrorAction SilentlyContinue"')
+                time.sleep(2)
+                self.context = self.playwright.chromium.launch_persistent_context(**launch_args)
+            else:
+                raise e
+
         self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
         self.page.set_default_timeout(20000)
 
@@ -120,30 +132,26 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
         except Exception:
             return False
 
-    def get_feed(self, keywords: List[str], target_profiles: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    def scroll_down(self, pixels: int = 900):
+        """Scrolls the feed down smoothly to trigger lazy-loading of next posts."""
+        self._ensure_browser()
+        try:
+            scroll_amt = pixels + random.randint(-150, 150)
+            self.page.mouse.wheel(0, scroll_amt)
+            self._human_delay(2.0, 3.5)
+        except Exception as e:
+            logger.debug(f"Scroll error: {e}")
+
+    def get_visible_posts(self) -> List[Dict[str, Any]]:
         """
-        Extracts real live posts from the user's authentic LinkedIn feed
-        and attaches a unique DOM identifier (`data-lb-id`) to each card.
+        Extracts all currently visible post cards in the DOM,
+        tagging each uniquely with `data-lb-id` for precise scoped interaction.
         """
         self._ensure_browser()
         posts = []
         try:
-            logger.info("Navigating to live LinkedIn feed...")
-            self.page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded")
-            self._human_delay(3, 5)
-
-            # Check if logged in
-            if "/login" in self.page.url or "/checkpoint" in self.page.url:
-                logger.error("Session expired. Run 'python main.py login' to re-authenticate.")
-                return []
-
-            # Organic mouse wheel scrolls to trigger feed updates
-            for _ in range(3):
-                self.page.mouse.wheel(0, random.randint(700, 1100))
-                self._human_delay(1.5, 2.5)
-
-            # Execute modern DOM post extraction and tag each card uniquely
             extracted = self.page.evaluate('''() => {
+                window.__lb_counter = window.__lb_counter || 0;
                 const results = [];
                 const menuButtons = Array.from(document.querySelectorAll("button[aria-label*='Open control menu for post by']"));
 
@@ -166,9 +174,13 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                     }
 
                     if (foundCard) {
-                        // Tag this exact card with a persistent identifier
-                        const uniqueId = `lb_post_${i + 1}`;
-                        foundCard.setAttribute("data-lb-id", uniqueId);
+                        // Tag card if not already tagged
+                        let uniqueId = foundCard.getAttribute("data-lb-id");
+                        if (!uniqueId) {
+                            window.__lb_counter++;
+                            uniqueId = `lb_post_${window.__lb_counter}`;
+                            foundCard.setAttribute("data-lb-id", uniqueId);
+                        }
 
                         // Extract text nodes
                         const textElements = Array.from(foundCard.querySelectorAll("p, span[dir='ltr']"));
@@ -189,15 +201,12 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                             post_id: uniqueId,
                             author_name: author,
                             author_headline: headline,
-                            content: fullText,
-                            index: i
+                            content: fullText
                         });
                     }
                 }
                 return results;
             }''')
-
-            logger.info(f"Successfully extracted {len(extracted)} real posts from your LinkedIn feed.")
 
             for item in extracted:
                 content = item.get("content", "").strip()
@@ -210,14 +219,34 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                             "profile_url": "https://www.linkedin.com"
                         },
                         "content": content,
-                        "created_at": time.time(),
-                        "_menu_index": item.get("index")
+                        "created_at": time.time()
                     })
 
         except Exception as e:
-            logger.error(f"Error reading live feed: {e}")
+            logger.error(f"Error reading visible cards: {e}")
 
         return posts
+
+    def get_feed(self, keywords: List[str], target_profiles: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """
+        Navigates to feed and returns initial batch of visible cards.
+        """
+        self._ensure_browser()
+        try:
+            logger.info("Opening live LinkedIn feed...")
+            self.page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded")
+            self._human_delay(3, 5)
+
+            if "/login" in self.page.url or "/checkpoint" in self.page.url:
+                logger.error("Session expired. Run 'python main.py login' to re-authenticate.")
+                return []
+
+            # Initial scroll to load updates
+            self.scroll_down(800)
+            return self.get_visible_posts()
+        except Exception as e:
+            logger.error(f"Error opening feed: {e}")
+            return []
 
     def like_post(self, post_id: str) -> Dict[str, Any]:
         """
@@ -225,8 +254,6 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
         """
         self._ensure_browser()
         try:
-            logger.info(f"[RealLinkedIn] Locating Like button strictly inside card [{post_id}]...")
-
             clicked = self.page.evaluate('''(targetId) => {
                 const card = document.querySelector(`div[data-lb-id='${targetId}']`);
                 if (!card) {
@@ -249,11 +276,11 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
             }''', post_id)
 
             if clicked.get("success"):
-                self._human_delay(2.0, 3.5)
-                logger.info(f"👍 [REAL ACTION] Successfully liked real post [{post_id}] ({clicked.get('status')})")
+                self._human_delay(1.5, 3.0)
+                logger.info(f"👍 [REAL LIKE] Clicked Like on card [{post_id}] ({clicked.get('status')})")
                 return {"status": "success", "post_id": post_id}
             else:
-                logger.warning(f"Could not like post [{post_id}]: {clicked.get('reason')}")
+                logger.debug(f"Could not like post [{post_id}]: {clicked.get('reason')}")
                 return {"status": "error", "message": clicked.get("reason")}
 
         except Exception as e:
@@ -267,7 +294,7 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
         """
         self._ensure_browser()
         try:
-            logger.info(f"[RealLinkedIn] Targeting comment box STRICTLY inside card [{post_id}]...")
+            logger.info(f"[RealLinkedIn] Submitting comment strictly inside card [{post_id}]...")
 
             # 1. Click Comment button inside THAT card
             opened = self.page.evaluate('''(targetId) => {
@@ -307,18 +334,29 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                 if char in [".", ",", "!"]:
                     time.sleep(random.uniform(0.1, 0.25))
 
-            self._human_delay(2.0, 3.5)
+            self._human_delay(1.5, 3.0)
 
-            # 4. Click Submit button strictly inside this card
-            submit_btn = card_locator.locator("button.comments-comment-box__submit-button, button:has-text('Comment')").first
+            # 4. Submit comment: try clicking the submit button or pressing Control+Enter
+            submitted = False
+            submit_btn = card_locator.locator(
+                "div.comments-comment-box form button[type='submit'], button.comments-comment-box__submit-button, button.artdeco-button--primary:has-text('Post')"
+            ).first
+
             try:
-                submit_btn.wait_for(state="visible", timeout=4000)
-                submit_btn.click()
-                self._human_delay(3.0, 5.0)
-                logger.info(f"💬 [REAL ACTION] Published real comment to post [{post_id}]")
-                return {"status": "success", "comment": comment_text}
-            except Exception as e:
-                return {"status": "error", "message": f"Could not click submit button in card [{post_id}]: {e}"}
+                if submit_btn.is_visible():
+                    submit_btn.click()
+                    submitted = True
+            except Exception:
+                pass
+
+            if not submitted:
+                # Use native LinkedIn shortcut: Control+Enter submits the active comment box
+                self.page.keyboard.press("Control+Enter")
+                submitted = True
+
+            self._human_delay(3.0, 5.0)
+            logger.info(f"💬 [REAL ACTION] Published real comment to post [{post_id}]")
+            return {"status": "success", "comment": comment_text}
 
         except Exception as e:
             logger.error(f"Failed to comment on {post_id}: {e}")

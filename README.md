@@ -131,6 +131,16 @@ pip install -r requirements.txt
 playwright install chromium
 ```
 
+### 4. Or Run via Docker (GitHub Container Registry)
+You can pull and run the container image published directly to **GitHub Packages**:
+```powershell
+# Pull latest container from GitHub Packages
+docker pull ghcr.io/akhil-binu/agent-linkedin:latest
+
+# Run the agent in interactive menu mode
+docker run -it --rm --env-file .env -v ${PWD}/data:/app/data ghcr.io/akhil-binu/agent-linkedin:latest menu
+```
+
 ---
 
 ## ⚙️ Environment Configuration

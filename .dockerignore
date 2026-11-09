@@ -1,0 +1,17 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+rate_limit_state.json
+hitl_queue.json
+data/*.db
+data/*.sqlite
+dist
+build
+*.egg-info
+.vscode
+*.spec

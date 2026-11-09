@@ -176,40 +176,49 @@ class ContentGenerator:
         Returns: (comment_text, confidence_score, list_of_violations)
         """
         author_name = author_profile.get("name", "Colleague")
-        author_title = author_profile.get("headline", "Cybersecurity Professional")
+        author_title = (author_profile.get("headline") or "").strip()
         first_name = author_name.split()[0] if author_name else ""
         name_ref = f", {first_name}" if first_name and first_name.lower() != "colleague" else ""
 
+        # Sanitize post_content: ensure author headline or name is not polluted into post text
+        cleaned_content = (post_content or "").strip()
+        if author_title and author_title in cleaned_content:
+            cleaned_content = cleaned_content.replace(author_title, "").strip()
+        if author_name and cleaned_content.startswith(author_name):
+            cleaned_content = cleaned_content[len(author_name):].strip()
+        cleaned_content = re.sub(r'(…|\.\.\.)\s*see more|see less', '', cleaned_content, flags=re.IGNORECASE).strip()
+
         if post_type == "CAREER_MILESTONE":
             system_prompt = (
-                "You are an experienced senior professional congratulating a colleague on their career announcement, new position, or promotion. "
+                "You are an experienced senior professional congratulating a colleague on their career announcement, new position, or promotion based strictly on their post. "
                 "CRITICAL INSTRUCTIONS: "
-                "1. Offer warm, genuine, executive-to-peer appreciation and congratulations for their new role. "
-                "2. Directly mention their role, company, or team if present in the post. "
+                "1. Base your congratulations 100% on the new role, company, or team specifically announced in the 'Post Content'. "
+                "2. DO NOT comment on or praise their general profile headline, bio, or credentials. "
                 "3. DO NOT force cybersecurity terminology unless their post is explicitly about a security role. "
                 "4. STRICTLY NO QUESTIONS. Do NOT include any question marks ('?'). "
                 "5. Keep it concise (1 to 2 sentences max) in a warm, polished, human tone. "
                 "6. NEVER use AI clichés ('testament', 'beacon', 'delve', 'pivotal', 'game-changer')."
             )
             user_prompt = (
-                f"Author: {author_name} ({author_title})\n"
-                f"Career Announcement:\n\"{post_content}\"\n\n"
+                f"Author: {author_name}\n"
+                f"Career Announcement:\n\"{cleaned_content}\"\n\n"
                 f"Write a warm, professional appreciation and congratulations comment (1-2 sentences):"
             )
 
         elif post_type == "CERTIFICATION_ACHIEVEMENT":
             system_prompt = (
-                "You are an experienced professional congratulating a colleague on earning a certification, degree, or major accomplishment. "
+                "You are an experienced professional congratulating a colleague on earning a certification, degree, or major accomplishment based strictly on their post. "
                 "CRITICAL INSTRUCTIONS: "
                 "1. Commend their hard work, dedication, and discipline in an encouraging peer tone. "
-                "2. Acknowledge the specific credential or achievement mentioned in the post. "
-                "3. STRICTLY NO QUESTIONS. Do NOT include any question marks ('?'). "
-                "4. Keep it concise (1 to 2 sentences max). "
-                "5. NEVER use AI clichés ('testament', 'beacon', 'delve', 'pivotal', 'game-changer')."
+                "2. Acknowledge the specific credential or achievement explicitly mentioned in the post. "
+                "3. DO NOT comment on or praise their profile headline, bio, or unrelated credentials. "
+                "4. STRICTLY NO QUESTIONS. Do NOT include any question marks ('?'). "
+                "5. Keep it concise (1 to 2 sentences max). "
+                "6. NEVER use AI clichés ('testament', 'beacon', 'delve', 'pivotal', 'game-changer')."
             )
             user_prompt = (
-                f"Author: {author_name} ({author_title})\n"
-                f"Achievement Post:\n\"{post_content}\"\n\n"
+                f"Author: {author_name}\n"
+                f"Achievement Post:\n\"{cleaned_content}\"\n\n"
                 f"Write a supportive, professional congratulations recognizing their milestone (1-2 sentences):"
             )
 
@@ -217,15 +226,17 @@ class ContentGenerator:
             system_prompt = (
                 "You are an experienced technology professional commenting on a colleague's product launch, project release, or open-source tool. "
                 "CRITICAL INSTRUCTIONS: "
-                "1. Commend the effort and dedication required to ship and build the project. "
-                "2. Offer a warm, constructive affirmation on its practical value based on what it actually does. "
-                "3. DO NOT force cybersecurity terminology unless the tool is specifically security-related. "
-                "4. STRICTLY NO QUESTIONS. No question marks ('?'). "
-                "5. 1 to 2 sentences max in a supportive peer tone."
+                "1. Base your comment strictly on what the project/tool actually does according to the post content. "
+                "2. Commend the effort and dedication required to ship and build the project. "
+                "3. Offer a warm, constructive affirmation on its practical value based on what it actually does. "
+                "4. DO NOT comment on or praise their profile headline, bio, job title, or credentials. "
+                "5. DO NOT force cybersecurity terminology unless the tool is specifically security-related. "
+                "6. STRICTLY NO QUESTIONS. No question marks ('?'). "
+                "7. 1 to 2 sentences max in a supportive peer tone."
             )
             user_prompt = (
-                f"Author: {author_name} ({author_title})\n"
-                f"Project Post:\n\"{post_content}\"\n\n"
+                f"Author: {author_name}\n"
+                f"Project Post:\n\"{cleaned_content}\"\n\n"
                 f"Write an appreciative, supportive comment on their project launch (1-2 sentences):"
             )
 
@@ -234,13 +245,14 @@ class ContentGenerator:
                 "You are a supportive peer commenting on a colleague's upcoming talk, webinar, podcast, or conference session. "
                 "CRITICAL INSTRUCTIONS: "
                 "1. Offer an encouraging note of support wishing them a fantastic session and high audience engagement. "
-                "2. Directly reflect the topic of their session. "
-                "3. STRICTLY NO QUESTIONS. No question marks ('?'). "
-                "4. 1 to 2 sentences max."
+                "2. Directly reflect the topic of their session as described in the post. "
+                "3. DO NOT comment on their profile headline or job credentials. "
+                "4. STRICTLY NO QUESTIONS. No question marks ('?'). "
+                "5. 1 to 2 sentences max."
             )
             user_prompt = (
-                f"Author: {author_name} ({author_title})\n"
-                f"Event Post:\n\"{post_content}\"\n\n"
+                f"Author: {author_name}\n"
+                f"Event Post:\n\"{cleaned_content}\"\n\n"
                 f"Write an encouraging note wishing them a successful session (1-2 sentences):"
             )
 
@@ -248,40 +260,84 @@ class ContentGenerator:
             system_prompt = (
                 "You are an experienced senior leader commenting on a colleague's post about management, work culture, team building, or career growth. "
                 "CRITICAL INSTRUCTIONS: "
-                "1. Express genuine appreciation for their perspective and validate the core insight. "
-                "2. Offer a supportive, seasoned peer reflection on leadership and teamwork. "
-                "3. STRICTLY NO QUESTIONS. No question marks ('?'). "
-                "4. 1 to 2 sentences max in an appreciative tone."
+                "1. Express genuine appreciation for their perspective and validate the core insight described in the post. "
+                "2. Base your comment 100% on the ideas in the post content; DO NOT mention or praise their job title, profile bio, or resume credentials. "
+                "3. Offer a supportive, seasoned peer reflection on leadership and teamwork. "
+                "4. STRICTLY NO QUESTIONS. No question marks ('?'). "
+                "5. 1 to 2 sentences max in an appreciative tone."
             )
             user_prompt = (
-                f"Author: {author_name} ({author_title})\n"
-                f"Post Content:\n\"{post_content}\"\n\n"
+                f"Author: {author_name}\n"
+                f"Post Content:\n\"{cleaned_content}\"\n\n"
                 f"Write a supportive, validating leadership comment (1-2 sentences):"
+            )
+
+        elif post_type == "HOLIDAY_OR_CELEBRATION":
+            system_prompt = (
+                "You are a warm, courteous professional responding to a colleague's holiday greeting, festival wish (e.g. Diwali, New Year), or celebration post. "
+                "CRITICAL INSTRUCTIONS: "
+                "1. Offer a warm, genuine, polite festive greeting matching the specific celebration mentioned in the post. "
+                "2. DO NOT mention their job title, profession, engineering, or profile credentials. "
+                "3. STRICTLY NO QUESTIONS. No question marks ('?'). "
+                "4. 1 to 2 sentences max in a warm, polite tone."
+            )
+            user_prompt = (
+                f"Author: {author_name}\n"
+                f"Greeting Post:\n\"{cleaned_content}\"\n\n"
+                f"Write a warm, polite holiday/celebration greeting (1-2 sentences):"
             )
 
         else:
             # TECHNICAL_OR_INDUSTRY_INSIGHT or GENERAL_PROFESSIONAL
             system_prompt = (
-                "You are an experienced senior professional commenting on a colleague's post based directly on the post's actual topic and nature. "
-                "CRITICAL INSTRUCTIONS: "
-                "1. Directly address the EXACT topic of the post (e.g. AI/ML, software engineering, cloud, data, security, product development, design, or modern business). "
-                "2. Express genuine professional appreciation and validate their insight with an affirmative, constructive peer thought. "
-                "3. DO NOT force cybersecurity terminology unless the post is explicitly about cybersecurity. Comment on the author's actual subject matter. "
-                "4. STRICTLY NO QUESTIONS. Do NOT ask any questions or include question marks ('?'). Frame everything as an affirmative, supportive peer statement. "
-                "5. Write 1 to 2 concise, polished sentences max. "
-                "6. NEVER use generic empty praise ('Great post', 'Spot on', 'Thanks for sharing'). Pair your appreciation with specific technical or practical substance from their post. "
-                "7. NEVER use AI buzzwords ('delve', 'testament', 'game-changer', 'fast-paced', 'in the digital age', 'crucial')."
+                "You are an experienced senior professional commenting on a colleague's post based directly on the post's actual topic and content. "
+                "CRITICAL INSTRUCTIONS - MANDATORY: "
+                "1. BASE COMMENT 100% ON THE POST CONTENT ONLY. Directly address the EXACT topic and specific points raised in the post text. "
+                "2. NEVER COMMENT ON OR PRAISE THE AUTHOR'S PROFILE DATA, JOB TITLE, RESUME, OR CREDENTIALS (e.g., do NOT say 'your leadership in orchestrating', do NOT praise their years of experience, and do NOT compliment their job title). "
+                "3. Express genuine professional appreciation and validate their insight with an affirmative, constructive peer thought on their topic. "
+                "4. DO NOT force cybersecurity terminology unless the post is explicitly about cybersecurity. Comment on the author's actual subject matter. "
+                "5. STRICTLY NO QUESTIONS. Do NOT ask any questions or include question marks ('?'). Frame everything as an affirmative, supportive peer statement. "
+                "6. Write 1 to 2 concise, polished sentences max. "
+                "7. NEVER use generic empty praise ('Great post', 'Spot on', 'Thanks for sharing'). Pair your appreciation with specific technical or practical substance from their post. "
+                "8. NEVER use AI buzzwords ('delve', 'testament', 'game-changer', 'fast-paced', 'in the digital age', 'crucial')."
             )
             user_prompt = (
-                f"Author: {author_name} ({author_title})\n"
-                f"Post Content:\n\"{post_content}\"\n\n"
-                f"Write a 1-2 sentence appreciative, supportive comment addressing their exact topic without asking any questions:"
+                f"Author: {author_name}\n"
+                f"Post Content:\n\"{cleaned_content}\"\n\n"
+                f"Write a 1-2 sentence appreciative, supportive comment addressing their exact topic without asking any questions and without commenting on their profile or job title:"
             )
 
         llm_response = self._call_llm(system_prompt, user_prompt)
+
+        # Safeguard: Validate that LLM did not hallucinate profile credentials or praise resume tropes
+        if llm_response:
+            candidate = llm_response.strip().strip('"')
+            profile_praise_cues = [
+                r"your leadership in orchestrating",
+                r"your leadership as",
+                r"your expertise as (a|an)",
+                r"your role as (a|an)",
+                r"as an? \w+ with over",
+                r"impressive (portfolio|resume|track record|career)",
+                r"smart airport",
+                r"systems engineering that will elevate",
+                r"mega-infrastructure projects"
+            ]
+            if any(re.search(pat, candidate, re.IGNORECASE) for pat in profile_praise_cues):
+                logger.warning("Detected profile-based praise in LLM output; discarding in favor of post-grounded comment.")
+                llm_response = None
+            elif author_title and len(author_title) > 10:
+                headline_words = [w.lower() for w in re.findall(r'[a-zA-Z]{5,}', author_title) if w.lower() not in ["expert", "director", "senior", "lead", "driving"]]
+                post_words = set(re.findall(r'[a-zA-Z]{4,}', cleaned_content.lower()))
+                comment_words = set(re.findall(r'[a-zA-Z]{4,}', candidate.lower()))
+                leaked = [w for w in headline_words if w in comment_words and w not in post_words]
+                if len(leaked) >= 2:
+                    logger.warning(f"Detected headline keyword leakage ({leaked}) in LLM output; discarding in favor of post-grounded comment.")
+                    llm_response = None
+
         if not llm_response:
             # Deterministic domain fallbacks tailored to post nature (100% question-free & appreciative)
-            lower = post_content.lower()
+            lower = cleaned_content.lower()
 
             if post_type == "CAREER_MILESTONE":
                 comment = (
@@ -308,6 +364,17 @@ class ContentGenerator:
                     f"Really thoughtful perspective on team growth and operational alignment{name_ref}. "
                     "Grounding leadership in practical empathy and clear focus is what truly moves organizations forward."
                 )
+            elif post_type == "HOLIDAY_OR_CELEBRATION":
+                if "diwali" in lower or "deepavali" in lower:
+                    comment = f"Wishing you and your family a very Happy Diwali filled with peace, joy, and prosperity{name_ref}!"
+                elif "new year" in lower:
+                    comment = f"Wishing you a fantastic and prosperous New Year ahead{name_ref}!"
+                elif "christmas" in lower:
+                    comment = f"Wishing you a wonderful Christmas and joyful holiday season{name_ref}!"
+                elif "eid" in lower:
+                    comment = f"Eid Mubarak to you and your loved ones! Wishing you peace and happiness{name_ref}."
+                else:
+                    comment = f"Wishing you a wonderful celebration and joyful festive season{name_ref}!"
             # Software / Code / Development
             elif re.search(r'\b(code|coding|software|python|rust|javascript|typescript|golang|react|api|git)\b', lower):
                 comment = (

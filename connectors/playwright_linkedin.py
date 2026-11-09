@@ -254,25 +254,69 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
 
                         const activePostId = permUrn || uniqueId;
 
-                        // Extract text nodes
-                        const textElements = Array.from(foundCard.querySelectorAll("p, span[dir='ltr']"));
-                        const fullText = textElements.map(el => el.innerText.trim()).filter(txt => txt.length > 20).join("\\n");
+                        // Locate actor header container to isolate author data from post body
+                        const actorEl = foundCard.querySelector(".update-components-actor, .feed-shared-actor, [class*='actor']");
 
-                        // Extract headline
-                        const spans = Array.from(foundCard.querySelectorAll("span"));
+                        // Extract headline strictly from actor container first
                         let headline = "";
-                        for (const s of spans) {
-                            const txt = s.innerText.trim();
-                            if (txt.length > 15 && txt.length < 130 && !txt.includes(author) && !txt.includes("follower") && !txt.includes("ago") && !txt.includes("commented") && !txt.includes("like this")) {
-                                headline = txt;
-                                break;
+                        if (actorEl) {
+                            const descEl = actorEl.querySelector(".update-components-actor__description, .feed-shared-actor__description, [class*='actor__description'], .update-components-actor__sub-description");
+                            if (descEl) {
+                                headline = (descEl.innerText || "").trim();
                             }
+                        }
+                        if (!headline) {
+                            const spans = Array.from(foundCard.querySelectorAll("span"));
+                            for (const s of spans) {
+                                const txt = (s.innerText || "").trim();
+                                if (txt.length > 15 && txt.length < 130 && !txt.includes(author) && !txt.includes("follower") && !txt.includes("ago") && !txt.includes("commented") && !txt.includes("like this") && !txt.includes("Open control menu")) {
+                                    headline = txt;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Extract author profile URL
+                        let profileUrl = "https://www.linkedin.com";
+                        if (actorEl) {
+                            const pLink = actorEl.querySelector("a[href*='/in/']");
+                            if (pLink && pLink.href) {
+                                profileUrl = pLink.href.split('?')[0];
+                            }
+                        }
+
+                        // Extract ONLY the actual post body commentary, strictly excluding actor header, social actions, and comments
+                        let fullText = "";
+                        const descContainer = foundCard.querySelector(
+                            ".update-components-text, .feed-shared-update-v2__description, .feed-shared-inline-show-more-text, [data-ad-preview='message'], .feed-shared-text, .update-components-update-v2__commentary"
+                        );
+                        if (descContainer) {
+                            fullText = (descContainer.innerText || "").trim();
+                        } else {
+                            // Fallback: search text nodes that are strictly outside the actor container, social counts, and comments
+                            const candidateNodes = Array.from(foundCard.querySelectorAll("p, span[dir='ltr']"));
+                            const filteredNodes = candidateNodes.filter(el => {
+                                if (el.closest(".update-components-actor, .feed-shared-actor, [class*='actor'], header")) return false;
+                                if (el.closest("[class*='social-action'], [class*='social-count'], [class*='reactions'], [class*='comment'], footer, button")) return false;
+                                return true;
+                            });
+                            fullText = filteredNodes.map(el => (el.innerText || "").trim()).filter(txt => txt.length > 15).join("\\n");
+                        }
+
+                        // Clean up read-more / see-more tags and ensure headline does not leak into content
+                        fullText = fullText.replace(/…\\s*see more|…see more|\\.\\.\\.\\s*see more|see less/gi, "").trim();
+                        if (headline && fullText.includes(headline)) {
+                            fullText = fullText.replace(headline, "").trim();
+                        }
+                        if (author && fullText.startsWith(author)) {
+                            fullText = fullText.replace(author, "").trim();
                         }
 
                         results.push({
                             post_id: activePostId,
                             author_name: author,
                             author_headline: headline,
+                            profile_url: profileUrl,
                             content: fullText
                         });
                     }
@@ -282,13 +326,22 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
 
             for item in extracted:
                 content = item.get("content", "").strip()
-                if content and len(content) > 30:
+                author_headline = (item.get("author_headline") or "").strip()
+                author_name = (item.get("author_name") or "").strip()
+
+                # Clean headline or author name from content if still leaked
+                if author_headline and author_headline in content:
+                    content = content.replace(author_headline, "").strip()
+                if author_name and content.startswith(author_name):
+                    content = content[len(author_name):].strip()
+
+                if content and len(content) > 15:
                     posts.append({
                         "post_id": item.get("post_id"),
                         "author": {
-                            "name": item.get("author_name"),
-                            "headline": item.get("author_headline") or "Cybersecurity Practitioner",
-                            "profile_url": "https://www.linkedin.com"
+                            "name": author_name or "Colleague",
+                            "headline": author_headline or "Cybersecurity Practitioner",
+                            "profile_url": item.get("profile_url") or "https://www.linkedin.com"
                         },
                         "content": content,
                         "created_at": time.time()

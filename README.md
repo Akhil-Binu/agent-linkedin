@@ -6,7 +6,7 @@
 [![Playwright](https://img.shields.io/badge/Playwright-Automated-green.svg)](https://playwright.dev/)
 [![LLM Support](https://img.shields.io/badge/LLM-Groq%20%7C%20Gemini%20%7C%20OpenAI%20%7C%20Claude-orange.svg)](https://groq.com/)
 [![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Release](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/Akhil-Binu/agent-linkedin/releases)
+[![Release](https://img.shields.io/badge/release-v1.3.0-blue.svg)](https://github.com/Akhil-Binu/agent-linkedin/releases)
 
 > **Created & Engineered by [Akhil Binu](https://github.com/Akhil-Binu)**  
 > *Cybersecurity Researcher | AI & LLM Pentesting | Autonomous Agent Systems*
@@ -58,6 +58,10 @@ Most LinkedIn automation scripts fail quickly due to three structural flaws:
 
 | Capability | Description |
 | :--- | :--- |
+| **🎯 Post-Grounded Commenting** | Generates comments based 100% on actual post commentary; eliminates profile headline leakage and prevents awkward resume/job-title praise. |
+| **🔔 Notifications Auto-Reply Engine** | Ingests incoming notifications for mentions, replies, and discussions, posting bespoke 2-way follow-ups directly to active threads. |
+| **🎉 Festive & Celebration Classifier** | Automatically identifies cultural and holiday celebrations (`HOLIDAY_OR_CELEBRATION`) and crafts warm, polite festive wishes. |
+| **🛡️ Geopolitical & Safety Guard** | Safely filters out controversial geopolitical territorial maps and sensitive partisan debates to protect account standing. |
 | **🔎 Targeted "Latest" Search** | Ingest content by hashtag or keyword (e.g. `#cybersecurity`, `#devsecops`) sorted strictly by `date_posted` (Past 24 Hours) to engage early. |
 | **🚀 Feed Engagement Loop** | Autonomous continuous feed evaluation meeting the strict **15 Comments & 20 Likes** must-rule with adaptive human scrolling. |
 | **🤝 Warm Connection Outreach** | Sends context-aware connection requests (< 280 chars) referencing the post topic to authors immediately after commenting. |

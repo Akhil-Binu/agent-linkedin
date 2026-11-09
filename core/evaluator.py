@@ -30,8 +30,12 @@ class PostEvaluator:
 
     def _assess_sentiment(self, text: str) -> str:
         lower = text.lower()
-        # Politics / partisan triggers
-        political_terms = ["election", "democrats", "republicans", "partisan", "senate vote", "potus"]
+        # Politics / partisan / geopolitical triggers
+        political_terms = [
+            "election", "democrats", "republicans", "partisan", "senate vote", "potus",
+            "akhand bharat", "geopolitics", "geopolitical", "territory", "territorial",
+            "border dispute", "war", "conflict", "regime", "propaganda"
+        ]
         if any(term in lower for term in political_terms):
             return "controversial"
 
@@ -147,7 +151,17 @@ class PostEvaluator:
         if any(re.search(p, lower) for p in leadership_patterns):
             return "LEADERSHIP_AND_CULTURE"
 
-        # 6. Technical / Engineering / AI / Data / Architecture
+        # 6. Holiday / Festive / Personal Celebration
+        festive_patterns = [
+            r"\b(happy\s+(diwali|deepavali|new\s+year|holidays|christmas|eid|thanksgiving|hanukkah))\b",
+            r"\b(wishing\s+everyone\s+a\s+(happy|peaceful|blessed|prosperous))\b",
+            r"\bfestival\s+of\s+lights\b",
+            r"\bseason('s)?\s+greetings\b"
+        ]
+        if any(re.search(p, lower) for p in festive_patterns):
+            return "HOLIDAY_OR_CELEBRATION"
+
+        # 7. Technical / Engineering / AI / Data / Architecture
         tech_patterns = [
             r"\b(code|coding|software|python|javascript|typescript|rust|golang|c\+\+|api|database|sql|nosql|cloud|aws|azure|gcp|docker|kubernetes|k8s|ai|llm|machine\s+learning|deep\s+learning|data\s+science|architecture|security|vulnerability|system\s+design|performance|backend|frontend)\b"
         ]
@@ -256,6 +270,10 @@ class PostEvaluator:
             suggested_angle = "Thoughtful leadership affirmation and validating the core team perspective"
             like_reason = "Appreciation for leadership insight"
             comment_reason = "Leadership / culture: validating insight"
+        elif post_type == "HOLIDAY_OR_CELEBRATION":
+            suggested_angle = "Warm holiday greeting and festive celebration wishes"
+            like_reason = "Celebrate holiday greeting"
+            comment_reason = "Holiday / festive post: polite celebration wish"
         else:
             suggested_angle = "Appreciative peer validation directly addressing the author's specific topic"
             comment_reason = "Professional insight: supportive peer appreciation"

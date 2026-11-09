@@ -92,6 +92,25 @@ class TestPostEvaluator(unittest.TestCase):
         self.assertEqual(cert.post_type, "CERTIFICATION_ACHIEVEMENT")
         self.assertTrue(cert.is_relevant)
 
+    def test_rejects_geopolitical_sensitive_post(self):
+        geo_post = self.evaluator.analyze_post(
+            "p_geo",
+            "Akhand Bharat IN Happy Diwali be united and Peaceful with our India IN Progressive.. Jai Hind",
+            {"headline": "Project Director & Aviation Systems Expert | Driving $15B+ Mega Projects"}
+        )
+        self.assertFalse(geo_post.should_comment)
+        self.assertEqual(geo_post.sentiment, "controversial")
+
+    def test_classifies_holiday_celebration(self):
+        festive = self.evaluator.analyze_post(
+            "p_festive",
+            "Happy Diwali to everyone celebrating! Wishing joy and prosperity to all.",
+            {"headline": "Software Architect"}
+        )
+        self.assertEqual(festive.post_type, "HOLIDAY_OR_CELEBRATION")
+        self.assertTrue(festive.is_relevant)
+        self.assertTrue(festive.should_comment)
+
 class TestRateLimiter(unittest.TestCase):
     def setUp(self):
         self.temp_file = Path(tempfile.mktemp(suffix=".json"))
@@ -317,6 +336,46 @@ class TestAdvancedFeatures(unittest.TestCase):
         self.bot.read_notifications_and_reply(limit=2, auto_reply=True)
         self.assertEqual(len(self.bot.rate_limiter.state["actions"]["comments"]), initial_comments + 2)
         self.assertEqual(len(self.bot.connector.comments), 2)
+
+    def test_comment_based_on_post_not_profile(self):
+        """Tests that comment focuses strictly on post content, ignoring author profile credentials."""
+        author = {
+            "name": "Mohammed Abdul Imran",
+            "headline": "Project Director & Aviation Systems Expert | Driving $15B+ Mega Projects | Smart Airport Master Planning | ORAT | MEPF | MSI"
+        }
+        post_content = "Prioritizing proactive credential rotation and automated access reviews prevents privilege escalation in production clusters."
+        comment, conf, violations = self.bot.generator.generate_comment(
+            post_content=post_content,
+            author_profile=author,
+            post_type="TECHNICAL_OR_INDUSTRY_INSIGHT"
+        )
+        self.assertIsInstance(comment, str)
+        self.assertGreater(len(comment), 15)
+        self.assertNotIn("?", comment)
+
+        # STRICT ASSERTION: The comment MUST NOT comment on the profile credentials / airport / aviation / $15B+
+        lower_comment = comment.lower()
+        forbidden_profile_terms = ["airport", "aviation", "15b", "15 b", "orat", "mepf", "msi", "mega-infrastructure", "systems engineering that will elevate"]
+        for term in forbidden_profile_terms:
+            self.assertNotIn(term, lower_comment, f"Comment leaked profile data: found '{term}' in '{comment}'")
+
+    def test_festive_comment_grounded_in_greeting(self):
+        """Tests that festive greeting post generates holiday wishes rather than technical or profile praise."""
+        author = {
+            "name": "Priya Sharma",
+            "headline": "Executive Vice President | Global Enterprise IT Transformation | Driving $500M P&L"
+        }
+        post_content = "Wishing everyone a very Happy Diwali and prosperous festive season ahead!"
+        comment, conf, violations = self.bot.generator.generate_comment(
+            post_content=post_content,
+            author_profile=author,
+            post_type="HOLIDAY_OR_CELEBRATION"
+        )
+        lower_comment = comment.lower()
+        self.assertIn("diwali", lower_comment)
+        self.assertNotIn("500m", lower_comment)
+        self.assertNotIn("enterprise it transformation", lower_comment)
+        self.assertNotIn("p&l", lower_comment)
 
 if __name__ == "__main__":
     unittest.main()

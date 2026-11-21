@@ -39,8 +39,8 @@ def print_banner():
 
 def display_menu():
     print("\nSelect a feature to execute:")
-    print("  [1] 🔎 Targeted Search & Engagement (Latest #Cybersecurity Posts, 15 Comments & 20 Likes)")
-    print("  [2] 🚀 General Feed Engagement Loop (Must-Rule: 15 Comments & 20 Likes)")
+    print("  [1] 🔎 Targeted Search & Engagement (Latest #Cybersecurity Posts, Custom Comments & Likes)")
+    print("  [2] 🚀 General Feed Engagement Loop (Custom Comments & Likes)")
     print("  [3] 🤝 Warm Connection Requests (Personalized Outreach to Commented Authors)")
     print("  [4] 🔄 2-Way Reply Tracker (Continue Dialogues on Active Threads)")
     print("  [5] 🔔 Read Notifications & Auto-Reply (Scan Inbound Alerts & Continue Discussions)")
@@ -62,6 +62,22 @@ def ask_mode() -> str:
     val = input("Run with Real LinkedIn Browser? [Y/n] (default: Y): ").strip().lower()
     return "REAL" if val != "n" else "MOCK"
 
+def ask_targets(default_comments: int = 5, default_likes: int = 10) -> tuple:
+    """Prompts user for their desired number of comments and likes."""
+    try:
+        c_str = input(f"How many comments to post? (default: {default_comments}): ").strip()
+        comments = int(c_str) if c_str.isdigit() and int(c_str) >= 0 else default_comments
+    except Exception:
+        comments = default_comments
+
+    try:
+        l_str = input(f"How many likes to give? (default: {default_likes}): ").strip()
+        likes = int(l_str) if l_str.isdigit() and int(l_str) >= 0 else default_likes
+    except Exception:
+        likes = default_likes
+
+    return comments, likes
+
 def run_menu():
     while True:
         print_banner()
@@ -74,16 +90,18 @@ def run_menu():
             if not query:
                 query = "#cybersecurity"
             
+            target_comments, target_likes = ask_targets(default_comments=5, default_likes=10)
+
             connect_val = input("Send warm connection request after commenting? [y/N]: ").strip().lower()
             do_connect = (connect_val == "y")
             
             mode = ask_mode()
-            print(f"\n🚀 Initializing LinkedBot in {mode} mode for query '{query}'...")
+            print(f"\n🚀 Initializing LinkedBot in {mode} mode for query '{query}' (Target: {target_comments} comments, {target_likes} likes)...")
             bot = LinkedBotAgent(override_mode=mode)
             try:
                 bot.run_engagement_cycle(
-                    target_comments=15,
-                    target_likes=20,
+                    target_comments=target_comments,
+                    target_likes=target_likes,
                     search_query=query,
                     sort_by="date_posted",
                     auto_connect=do_connect
@@ -93,12 +111,13 @@ def run_menu():
             input("\nPress Enter to return to menu...")
 
         elif choice == "2":
-            print("\n--- [2] GENERAL FEED ENGAGEMENT LOOP (MUST-RULE) ---")
-            print("Target: Minimum 15 Comments & 20 Likes on relevant posts.")
+            print("\n--- [2] GENERAL FEED ENGAGEMENT LOOP ---")
+            target_comments, target_likes = ask_targets(default_comments=5, default_likes=10)
             mode = ask_mode()
+            print(f"\n🚀 Initializing LinkedBot in {mode} mode (Target: {target_comments} comments, {target_likes} likes)...")
             bot = LinkedBotAgent(override_mode=mode)
             try:
-                bot.run_engagement_cycle(target_comments=15, target_likes=20)
+                bot.run_engagement_cycle(target_comments=target_comments, target_likes=target_likes)
             finally:
                 bot.close()
             input("\nPress Enter to return to menu...")
@@ -108,13 +127,14 @@ def run_menu():
             query = input("Enter topic or hashtag to discover authors (default: 'cloud security'): ").strip()
             if not query:
                 query = "cloud security"
+            target_comments, target_likes = ask_targets(default_comments=3, default_likes=5)
             mode = ask_mode()
             bot = LinkedBotAgent(override_mode=mode)
             try:
-                print(f"Executing scan and sending warm connections for '{query}'...")
+                print(f"Executing scan and sending warm connections for '{query}' (Target: {target_comments} comments, {target_likes} likes)...")
                 bot.run_engagement_cycle(
-                    target_comments=5,
-                    target_likes=10,
+                    target_comments=target_comments,
+                    target_likes=target_likes,
                     search_query=query,
                     sort_by="date_posted",
                     auto_connect=True

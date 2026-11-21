@@ -208,8 +208,8 @@ python main.py
 ╚══════════════════════════════════════════════════════════════╝
 
 Select a feature to execute:
-  [1] 🔎 Targeted Search & Engagement (Latest #Cybersecurity Posts, 15 Comments & 20 Likes)
-  [2] 🚀 General Feed Engagement Loop (Must-Rule: 15 Comments & 20 Likes)
+  [1] 🔎 Targeted Search & Engagement (Latest #Cybersecurity Posts, Custom Comments & Likes)
+  [2] 🚀 General Feed Engagement Loop (Custom Comments & Likes)
   [3] 🤝 Warm Connection Requests (Personalized Outreach to Commented Authors)
   [4] 🔄 2-Way Reply Tracker (Continue Dialogues on Active Threads)
   [5] 🔔 Read Notifications & Auto-Reply (Scan Inbound Alerts & Continue Discussions)
@@ -238,8 +238,9 @@ python main.py login
 ### 2. Autonomous Feed Engagement Cycle
 Runs the continuous feed evaluation loop until targets are satisfied:
 ```powershell
-# Run engagement cycle on real LinkedIn feed (Default: 15 comments & 20 likes)
+# Run engagement cycle on real LinkedIn feed (Default: 5 comments & 10 likes, or customize with flags)
 python main.py run --real
+python main.py run --real --target-comments 10 --target-likes 15
 
 # Run targeted search for newest #cybersecurity posts sorted by Date Posted
 python main.py run --real --search "#cybersecurity" --sort-by date_posted

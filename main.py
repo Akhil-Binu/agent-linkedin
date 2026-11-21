@@ -67,8 +67,8 @@ class LinkedBotAgent:
 
     def run_engagement_cycle(
         self,
-        target_comments: int = 15,
-        target_likes: int = 20,
+        target_comments: int = 5,
+        target_likes: int = 10,
         max_scrolls: int = 100,
         search_query: Optional[str] = None,
         sort_by: str = "date_posted",
@@ -78,10 +78,10 @@ class LinkedBotAgent:
         Executes continuous feed streaming and engagement:
         - Feature 1: Targeted hashtag or keyword search with date_posted sorting ('Past 24 Hours' / 'Latest').
         - Feature 3: Warm connection request automation after commenting.
-        - Scrolls dynamically until at least `target_comments` (15) posts are commented on
-          AND at least `target_likes` (20) posts are liked on scroll.
+        - Scrolls dynamically until at least `target_comments` posts are commented on
+          AND at least `target_likes` posts are liked on scroll.
         - Evaluates post classification and responds with topic-tailored appreciation (zero questions).
-        - Enforces dual MUST-RULE: engagement continues until BOTH target_comments and target_likes are met.
+        - Enforces dual goal: engagement continues until BOTH target_comments and target_likes are met.
         """
         header = f"🚀 LinkedBot Continuous Engagement Loop [Goal: >= {target_comments} Comments & >= {target_likes} Likes]"
         if search_query:
@@ -595,8 +595,8 @@ def main():
     # Command: run
     run_parser = subparsers.add_parser("run", help="Run autonomous feed scan & engagement loop")
     run_parser.add_argument("--real", action="store_true", help="Use real LinkedIn browser automation")
-    run_parser.add_argument("--target-comments", type=int, default=15, help="Minimum number of posts to comment on (default: 15)")
-    run_parser.add_argument("--target-likes", type=int, default=20, help="Minimum number of posts to like on scroll (default: 20)")
+    run_parser.add_argument("--target-comments", type=int, default=5, help="Number of posts to comment on (default: 5)")
+    run_parser.add_argument("--target-likes", type=int, default=10, help="Number of posts to like on scroll (default: 10)")
     run_parser.add_argument("--max-scrolls", type=int, default=100, help="Maximum scrolls to discover posts (default: 100)")
     run_parser.add_argument("--search", type=str, default=None, help="Targeted hashtag or keyword search (e.g. '#cybersecurity')")
     run_parser.add_argument("--sort-by", type=str, default="date_posted", choices=["date_posted", "relevance"], help="Search sort order (default: date_posted)")
@@ -681,8 +681,8 @@ def main():
         if args.command == "login":
             bot.interactive_login()
         elif args.command == "run":
-            target_comments = getattr(args, "target_comments", 15)
-            target_likes = getattr(args, "target_likes", 20)
+            target_comments = getattr(args, "target_comments", 5)
+            target_likes = getattr(args, "target_likes", 10)
             max_s = getattr(args, "max_scrolls", 100)
             s_query = getattr(args, "search", None)
             s_order = getattr(args, "sort_by", "date_posted")

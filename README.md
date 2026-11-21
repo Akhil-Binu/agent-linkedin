@@ -59,6 +59,9 @@ Most LinkedIn automation scripts fail quickly due to three structural flaws:
 | Capability | Description |
 | :--- | :--- |
 | **🎯 Post-Grounded Commenting** | Generates comments based 100% on actual post commentary; eliminates profile headline leakage and prevents awkward resume/job-title praise. |
+| **🚫 Smart Post Exclusions** | Automatically filters out hiring/recruitment posts, LinkedIn sponsored/ad posts, non-English posts, and generic video course completion certificates. |
+| **🏆 Practical Cert & CTF Prioritization** | Specifically targets and congratulates competitive exams & hands-on milestones: CEH, CompTIA Security+, eJPT, OSCP, HackTheBox, TryHackMe, and all other genuine post types. |
+| **💬 1-2 Line Supportive Tone** | Delivers concise, encouraging, peer-to-peer reflections strictly 1 to 2 lines long, fully grounded in the author's topic, with zero questions. |
 | **🔔 Notifications Auto-Reply Engine** | Ingests incoming notifications for mentions, replies, and discussions, posting bespoke 2-way follow-ups directly to active threads. |
 | **🎉 Festive & Celebration Classifier** | Automatically identifies cultural and holiday celebrations (`HOLIDAY_OR_CELEBRATION`) and crafts warm, polite festive wishes. |
 | **🛡️ Geopolitical & Safety Guard** | Safely filters out controversial geopolitical territorial maps and sensitive partisan debates to protect account standing. |

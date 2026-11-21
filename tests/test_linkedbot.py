@@ -41,6 +41,31 @@ class TestAntiSlop(unittest.TestCase):
         self.assertTrue(valid)
         self.assertEqual(len(violations), 0)
 
+class TestCompetitiveCertAndCTFGeneration(unittest.TestCase):
+    def setUp(self):
+        config = load_config()
+        self.generator = ContentGenerator(config)
+
+    def test_generates_supportive_1_to_2_line_comment_for_ejpt(self):
+        comment, conf, violations = self.generator.generate_comment(
+            post_content="Finally passed the eJPT exam after 3 weeks of intensive hands-on labs!",
+            author_profile={"name": "Alex Mercer", "headline": "Junior Pentester"},
+            post_type="COMPETITIVE_EXAM_OR_CTF"
+        )
+        self.assertNotIn("?", comment)
+        self.assertTrue(len(comment) > 20)
+        self.assertNotIn("\n", comment)
+
+    def test_generates_supportive_comment_for_ctf(self):
+        comment, conf, violations = self.generator.generate_comment(
+            post_content="Placed top 10 in the HackTheBox Cyber Apocalypse CTF! Pwned all web and reverse engineering boxes.",
+            author_profile={"name": "Samantha Reed", "headline": "Red Teamer"},
+            post_type="COMPETITIVE_EXAM_OR_CTF"
+        )
+        self.assertNotIn("?", comment)
+        self.assertTrue(len(comment) > 20)
+        self.assertNotIn("\n", comment)
+
 class TestPostEvaluator(unittest.TestCase):
     def setUp(self):
         config = load_config()
@@ -89,8 +114,78 @@ class TestPostEvaluator(unittest.TestCase):
             "Proud to announce that I have passed the CISSP exam!",
             {"headline": "SOC Engineer"}
         )
-        self.assertEqual(cert.post_type, "CERTIFICATION_ACHIEVEMENT")
+        self.assertIn(cert.post_type, ["CERTIFICATION_ACHIEVEMENT", "COMPETITIVE_EXAM_OR_CTF"])
         self.assertTrue(cert.is_relevant)
+        self.assertTrue(cert.should_comment)
+
+    def test_filters_hiring_post(self):
+        result = self.evaluator.analyze_post(
+            "p_hire",
+            "We are hiring Senior SOC Analysts! Join our team at SentinelOne. Apply here: https://sentinelone.com/careers",
+            {"headline": "Talent Acquisition Lead"}
+        )
+        self.assertFalse(result.should_comment)
+        self.assertEqual(result.post_type, "HIRING_OR_JOB_ALERT")
+
+    def test_filters_ad_post(self):
+        result = self.evaluator.analyze_post(
+            "p_ad",
+            "Sponsored: Struggling with alert fatigue? Book a demo today and get 50% off your annual license.",
+            {"headline": "Enterprise Sales Representative"}
+        )
+        self.assertFalse(result.should_comment)
+        self.assertEqual(result.post_type, "SPONSORED_OR_AD")
+
+    def test_filters_non_english_post(self):
+        result = self.evaluator.analyze_post(
+            "p_non_eng",
+            "Estoy muy contento de compartir con todos ustedes mi nuevo proyecto sobre ciberseguridad y protección de datos.",
+            {"headline": "Ingeniero de Ciberseguridad"}
+        )
+        self.assertFalse(result.should_comment)
+        self.assertEqual(result.post_type, "NON_ENGLISH")
+
+    def test_filters_course_certificate_post(self):
+        result = self.evaluator.analyze_post(
+            "p_course",
+            "I have completed the Python for Cybersecurity course on Coursera! Certificate of completion attached.",
+            {"headline": "Junior Security Student"}
+        )
+        self.assertFalse(result.should_comment)
+        self.assertEqual(result.post_type, "COURSE_CERTIFICATE")
+
+    def test_must_comment_on_competitive_certs_and_ctfs(self):
+        ejpt_post = self.evaluator.analyze_post(
+            "p_ejpt",
+            "Excited to share that I passed the eJPT exam! The hands-on network pivoting and practical labs were challenging.",
+            {"headline": "Security Practitioner"}
+        )
+        self.assertTrue(ejpt_post.should_comment)
+        self.assertEqual(ejpt_post.post_type, "COMPETITIVE_EXAM_OR_CTF")
+
+        sec_post = self.evaluator.analyze_post(
+            "p_sec",
+            "Thrilled to announce that I cleared my CompTIA Security+ exam today on the first try!",
+            {"headline": "SOC Analyst"}
+        )
+        self.assertTrue(sec_post.should_comment)
+        self.assertEqual(sec_post.post_type, "COMPETITIVE_EXAM_OR_CTF")
+
+        ceh_post = self.evaluator.analyze_post(
+            "p_ceh",
+            "Proud to announce I passed the Certified Ethical Hacker (CEH) certification exam!",
+            {"headline": "Penetration Tester"}
+        )
+        self.assertTrue(ceh_post.should_comment)
+        self.assertEqual(ceh_post.post_type, "COMPETITIVE_EXAM_OR_CTF")
+
+        ctf_post = self.evaluator.analyze_post(
+            "p_ctf",
+            "Our team placed top 5 in the HackTheBox Cyber Apocalypse CTF! Pwned all web and pwn challenges.",
+            {"headline": "Red Team Specialist"}
+        )
+        self.assertTrue(ctf_post.should_comment)
+        self.assertEqual(ctf_post.post_type, "COMPETITIVE_EXAM_OR_CTF")
 
     def test_rejects_geopolitical_sensitive_post(self):
         geo_post = self.evaluator.analyze_post(

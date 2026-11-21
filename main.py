@@ -153,7 +153,7 @@ class LinkedBotAgent:
 
                 # 3. Comment based on post nature in an appreciative, supportive way (if target_comments not yet reached)
                 if comments_posted < target_comments:
-                    if eval_result.is_relevant:
+                    if eval_result.should_comment:
                         can_comment, c_msg = self.rate_limiter.can_perform("comments")
                         if can_comment:
                             comment, confidence, violations = self.generator.generate_comment(

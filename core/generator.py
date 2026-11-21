@@ -205,21 +205,21 @@ class ContentGenerator:
                 f"Write a warm, professional appreciation and congratulations comment (1-2 sentences):"
             )
 
-        elif post_type == "CERTIFICATION_ACHIEVEMENT":
+        elif post_type in ["CERTIFICATION_ACHIEVEMENT", "COMPETITIVE_EXAM_OR_CTF"]:
             system_prompt = (
-                "You are an experienced professional congratulating a colleague on earning a certification, degree, or major accomplishment based strictly on their post. "
+                "You are an experienced cybersecurity peer congratulating a colleague on clearing a competitive exam, practical certification, or excelling in a hands-on CTF challenge (such as CEH, CompTIA Security+/CySA+/PenTest+, eJPT, OSCP, Hack The Box, TryHackMe, etc.) based strictly on their post. "
                 "CRITICAL INSTRUCTIONS: "
-                "1. Commend their hard work, dedication, and discipline in an encouraging peer tone. "
-                "2. Acknowledge the specific credential or achievement explicitly mentioned in the post. "
-                "3. DO NOT comment on or praise their profile headline, bio, or unrelated credentials. "
+                "1. Make your comment supportive, highly related to their exact achievement, and strictly 1 to 2 lines (1 to 2 sentences max). "
+                "2. Directly acknowledge the specific certification, competitive exam, or CTF mentioned in their post. "
+                "3. Express genuine peer encouragement recognizing the hands-on lab work, methodology, or exam discipline required. "
                 "4. STRICTLY NO QUESTIONS. Do NOT include any question marks ('?'). "
-                "5. Keep it concise (1 to 2 sentences max). "
-                "6. NEVER use AI clichés ('testament', 'beacon', 'delve', 'pivotal', 'game-changer')."
+                "5. DO NOT comment on or praise their general profile headline, bio, or unrelated credentials. "
+                "6. NEVER use generic empty praise ('Great post', 'Spot on', 'Congratulations on this milestone'). Be specific to their achievement."
             )
             user_prompt = (
                 f"Author: {author_name}\n"
-                f"Achievement Post:\n\"{cleaned_content}\"\n\n"
-                f"Write a supportive, professional congratulations recognizing their milestone (1-2 sentences):"
+                f"Achievement / CTF Post:\n\"{cleaned_content}\"\n\n"
+                f"Write a supportive, 1-2 line congratulatory comment directly acknowledging their specific certification or CTF milestone:"
             )
 
         elif post_type == "PROJECT_OR_TOOL_LAUNCH":
@@ -344,11 +344,37 @@ class ContentGenerator:
                     f"Huge congratulations on stepping into the new role{name_ref}! "
                     "Wishing you tremendous impact, fulfillment, and great success in this next chapter."
                 )
-            elif post_type == "CERTIFICATION_ACHIEVEMENT":
-                comment = (
-                    f"Huge congratulations on earning this milestone{name_ref}! "
-                    "The discipline and dedicated preparation required to achieve this are significant. Very well deserved!"
-                )
+            elif post_type in ["CERTIFICATION_ACHIEVEMENT", "COMPETITIVE_EXAM_OR_CTF"]:
+                if re.search(r'\b(ctf|hack\s*the\s*box|htb|try\s*hack\s*me|thm|picoctf)\b', lower):
+                    comment = (
+                        f"Awesome job on the CTF challenge{name_ref}! "
+                        "Navigating those practical attack paths and pwning the target boxes takes serious technical grit and sharp methodology."
+                    )
+                elif re.search(r'\b(ejpt|elearnsecurity)\b', lower):
+                    comment = (
+                        f"Huge congratulations on clearing the eJPT{name_ref}! "
+                        "The hands-on pivoting, scanning, and practical assessment skills required for that exam build a fantastic foundation for offensive security."
+                    )
+                elif re.search(r'\b(comptia|security\+|sec\+|cysa\+|pentest\+|casp\+)\b', lower):
+                    comment = (
+                        f"Outstanding milestone clearing the CompTIA exam{name_ref}! "
+                        "Mastering those core network and security architecture fundamentals represents significant dedication and sets a strong baseline."
+                    )
+                elif re.search(r'\b(ceh|certified\s+ethical\s+hacker)\b', lower):
+                    comment = (
+                        f"Huge congratulations on earning your CEH certification{name_ref}! "
+                        "Covering such a wide breadth of threat vectors, reconnaissance, and defensive controls is a solid milestone in ethical hacking."
+                    )
+                elif re.search(r'\b(oscp|offsec)\b', lower):
+                    comment = (
+                        f"Massive congratulations on passing the OSCP{name_ref}! "
+                        "The endurance, persistence, and hands-on methodology required to tackle the 24-hour exam are truly top-tier."
+                    )
+                else:
+                    comment = (
+                        f"Huge congratulations on earning this milestone{name_ref}! "
+                        "The discipline and dedicated preparation required to achieve this are significant. Very well deserved!"
+                    )
             elif post_type == "PROJECT_OR_TOOL_LAUNCH":
                 comment = (
                     f"Fantastic work shipping this project{name_ref}! "
@@ -433,7 +459,7 @@ class ContentGenerator:
 
         # Run through tone & anti-slop verification
         is_valid, violations, penalty = self.anti_slop.evaluate_comment_tone(comment, post_type=post_type)
-        base_confidence = 94.0 if post_type in ["CAREER_MILESTONE", "CERTIFICATION_ACHIEVEMENT"] else 92.0
+        base_confidence = 94.0 if post_type in ["CAREER_MILESTONE", "CERTIFICATION_ACHIEVEMENT", "COMPETITIVE_EXAM_OR_CTF"] else 92.0
         final_confidence = max(10.0, base_confidence - penalty)
 
         return comment, round(final_confidence, 1), violations

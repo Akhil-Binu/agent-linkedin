@@ -312,12 +312,23 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                             fullText = fullText.replace(author, "").trim();
                         }
 
+                        // Check if post is sponsored or an advertisement
+                        let isSponsored = false;
+                        const subDesc = foundCard.querySelector(".update-components-actor__sub-description, .feed-shared-actor__sub-description");
+                        if (subDesc && (subDesc.innerText || "").toLowerCase().includes("promoted")) {
+                            isSponsored = true;
+                        }
+                        if (foundCard.querySelector("[data-ad-preview], .feed-shared-update-v2__sponsored, .feed-shared-update-v2--ad")) {
+                            isSponsored = true;
+                        }
+
                         results.push({
                             post_id: activePostId,
                             author_name: author,
                             author_headline: headline,
                             profile_url: profileUrl,
-                            content: fullText
+                            content: fullText,
+                            is_sponsored: isSponsored
                         });
                     }
                 }
@@ -341,7 +352,8 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                         "author": {
                             "name": author_name or "Colleague",
                             "headline": author_headline or "Cybersecurity Practitioner",
-                            "profile_url": item.get("profile_url") or "https://www.linkedin.com"
+                            "profile_url": item.get("profile_url") or "https://www.linkedin.com",
+                            "is_sponsored": item.get("is_sponsored", False)
                         },
                         "content": content,
                         "created_at": time.time()

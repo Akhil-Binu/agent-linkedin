@@ -88,9 +88,315 @@ class PostEvaluator:
 
         return "unknown"
 
-    def _classify_post_type(self, text: str) -> str:
-        """Categorizes post intent: CAREER_MILESTONE, CERTIFICATION_ACHIEVEMENT, PROJECT_OR_TOOL_LAUNCH, EVENT_OR_WEBINAR, LEADERSHIP_AND_CULTURE, TECHNICAL_OR_INDUSTRY_INSIGHT, GENERAL_PROFESSIONAL."""
+    def _is_non_english(self, text: str) -> bool:
+        """
+        Detects if a post is predominantly written in a non-English language.
+        Flags non-Latin alphabets (Cyrillic, Arabic, Devanagari/Hindi, CJK, etc.)
+        as well as Latin-script foreign languages (Spanish, Portuguese, French, German, Italian, etc.).
+        """
+        if not text or len(text.strip()) < 10:
+            return False
+
+        # 1. Non-Latin foreign script detection
+        foreign_scripts = re.findall(r'[\u0400-\u04FF\u0600-\u06FF\u0900-\u097F\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF\u0590-\u05FF\u0E00-\u0E7F]', text)
+        if len(foreign_scripts) >= 5:
+            return True
+
         lower = text.lower()
+        words = re.findall(r'\b[a-zA-Záéíóúãõâêîôûàèìòùçñäöüß]{2,}\b', lower)
+        if len(words) < 6:
+            return False
+
+        # Common markers for Portuguese / Spanish / French / German / Italian
+        foreign_markers = {
+            # Portuguese / Spanish
+            "para", "com", "por", "uma", "não", "mais", "sobre", "todos", "este", "como",
+            "você", "trabalho", "compartilhar", "certificação", "sucesso", "parabéns", "jornada",
+            "obrigado", "estou", "nossa", "minha", "equipe", "estamos", "desafio", "conhecimento",
+            "compartir", "certificación", "éxito", "gracias", "nuestro", "nuestra", "felicidades",
+            "desarrollo", "aprendizaje", "oportunidad", "muy", "también", "está", "están",
+            # French
+            "dans", "pour", "avec", "cette", "notre", "votre", "équipe", "travail", "formation",
+            "félicitations", "nouveau", "poste", "partager", "très", "heureux",
+            # German
+            "und", "für", "mit", "eine", "einer", "nicht", "auch", "unsere", "ihre", "arbeit",
+            "herzlichen", "glückwunsch", "erfolg", "weiterbildung",
+            # Italian
+            "congratulazioni", "nuovo", "ruolo", "felice", "nostro", "nostra", "lavoro", "grazie"
+        }
+
+        english_stopwords = {
+            "the", "be", "to", "of", "and", "a", "in", "that", "have", "i", "it", "for", "not",
+            "on", "with", "he", "as", "you", "do", "at", "this", "but", "his", "by", "from",
+            "they", "we", "say", "her", "she", "or", "an", "will", "my", "one", "all", "would",
+            "there", "their", "what", "so", "up", "out", "if", "about", "who", "get", "which",
+            "go", "me", "when", "make", "can", "like", "time", "no", "just", "him", "know",
+            "take", "people", "into", "year", "your", "good", "some", "could", "them", "see",
+            "other", "than", "then", "now", "look", "only", "come", "its", "over", "think",
+            "also", "back", "after", "use", "two", "how", "our", "work", "first", "well", "way",
+            "even", "new", "want", "because", "any", "these", "give", "day", "most", "us", "is", "are"
+        }
+
+        foreign_count = sum(1 for w in words if w in foreign_markers)
+        english_count = sum(1 for w in words if w in english_stopwords)
+
+        if foreign_count >= 3 and foreign_count >= english_count:
+            return True
+        if foreign_count >= 5:
+            return True
+
+        return False
+
+    def _is_ad_or_sponsored(self, text: str, author_profile: Dict[str, Any]) -> bool:
+        """
+        Detects if a post is a paid advertisement, sponsored campaign, or sales pitch.
+        """
+        if author_profile.get("is_sponsored"):
+            return True
+
+        lower = text.lower()
+        if re.search(r'\b(promoted|sponsored|advertisement)\b', lower):
+            if re.search(r'\bpromoted\s+to\b', lower):
+                return False
+            if re.search(r'\b(sponsored\s+by|promoted\s+post|advertisement)\b', lower) or lower.startswith("promoted") or lower.startswith("sponsored"):
+                return True
+
+        ad_cues = [
+            r"\bbook\s+a\s+demo\b",
+            r"\bschedule\s+a\s+demo\b",
+            r"\brequest\s+a\s+demo\b",
+            r"\buse\s+code\s+['\"a-z0-9_-]+\s+for\b",
+            r"\bpromo\s+code\b",
+            r"\bdiscount\s+code\b",
+            r"\bget\s+[0-9]+%\s+off\b",
+            r"\bsave\s+[0-9]+%\s+(today|now)\b",
+            r"\bstart\s+your\s+free\s+trial\b",
+            r"\bsign\s+up\s+for\s+(a\s+)?free\s+trial\b",
+            r"\blimited\s+time\s+offer\b",
+            r"\bpricing\s+starts\s+at\b",
+            r"\bclaim\s+your\s+(free\s+)?(spot|discount|seat|trial)\b"
+        ]
+        return any(re.search(pat, lower) for pat in ad_cues)
+
+    def _is_hiring_post(self, text: str) -> bool:
+        """
+        Detects if a post is an employer/recruiter hiring announcement, job vacancy, or referral call.
+        Does NOT trigger on personal career announcements ('I started a new role', 'I joined...').
+        """
+        lower = text.lower()
+
+        # If it's a personal career milestone, it's not a job vacancy listing
+        personal_milestone_cues = [
+            r"\b(starting|started)\s+a\s+new\s+position\b",
+            r"\bhapp(y|ily)\s+to\s+(share|announce)\s+that\s+i('m| am)?\s*(starting|joining|joined)\b",
+            r"\bexcited\s+to\s+(share|announce)\s+that\s+i('m| am)?\s*(starting|joining|joined)\b",
+            r"\bi('m| am)\s+joining\b",
+            r"\bmy\s+new\s+role\s+as\b",
+            r"\bthrilled\s+to\s+join\b"
+        ]
+        if any(re.search(p, lower) for p in personal_milestone_cues):
+            return False
+
+        hiring_cues = [
+            r"\bwe('re| are)\s+hiring\b",
+            r"\bi('m| am)\s+hiring\b",
+            r"\bteam\s+is\s+hiring\b",
+            r"\bcompany\s+is\s+hiring\b",
+            r"\bactively\s+hiring\b",
+            r"\bnow\s+hiring\b",
+            r"\blooking\s+to\s+hire\b",
+            r"\blooking\s+for\s+(a|an|experienced|talented|junior|senior|lead|staff)?\s*(engineer|developer|analyst|architect|consultant|candidate|intern|manager|specialist)\s+to\s+join\b",
+            r"\bjoin\s+our\s+(team|company|firm|organization|family)\b",
+            r"\bjoin\s+us\s+as\b",
+            r"\bjob\s+(opening|openings|vacancy|vacancies|opportunity|opportunities|alert)\b",
+            r"\bopen\s+(position|positions|roles?|vacancies)\b",
+            r"\bimmediate\s+openings?\b",
+            r"\bapply\s+(here|now|today|via|at)\b",
+            r"\bhow\s+to\s+apply\b",
+            r"\bsend\s+(your\s+)?(cv|resume)\b",
+            r"\bshare\s+(your\s+)?(cv|resume)\b",
+            r"\bdrop\s+(your\s+)?(cv|resume)\b",
+            r"\bdm\s+(me\s+)?(your\s+)?(cv|resume)\b",
+            r"\bemail\s+(your\s+)?(cv|resume)\b",
+            r"\breferral(s)?\s+available\b",
+            r"\bhiring\s+(alert|urgently|immediately)\b",
+            r"\bhiring\s+for\s+(the\s+position|our\s+client|roles?)\b",
+            r"\b(job|career)\s+description\b",
+            r"#hiring\b",
+            r"#jobopening\b",
+            r"#recruiting\b",
+            r"#recruitment\b",
+            r"#jobs\b",
+            r"#jobopportunity\b"
+        ]
+        return any(re.search(pat, lower) for pat in hiring_cues)
+
+    def _is_competitive_cert_or_ctf(self, text: str) -> bool:
+        """
+        Detects if a post is about a competitive exam, practical / hands-on cybersecurity certification,
+        or a CTF challenge (CEH, CompTIA Security+/CySA+/PenTest+, eJPT, OSCP, HackTheBox, TryHackMe, etc.).
+        """
+        lower = text.lower()
+        competitive_patterns = [
+            # CTFs & Practical Labs
+            r"\b(ctf|ctfs)\b",
+            r"\bhack\s*the\s*box\b",
+            r"\bhtb\b",
+            r"\btry\s*hack\s*me\b",
+            r"\bthm\b",
+            r"\bpicoctf\b",
+            r"\bdefcon\s+ctf\b",
+            r"\bcyber\s+apocalypse\b",
+            r"\bcyberdefenders\b",
+            r"\bblue\s*team\s*labs\b",
+            r"\bbtlo\b",
+            r"\bvulnhub\b",
+            r"\boverthewire\b",
+            r"\bunderthewire\b",
+            r"\bproving\s+grounds\b",
+            r"\bctfd\b",
+            r"\bpwning\s+(boxes|machines)\b",
+
+            # CompTIA Certifications
+            r"\bcomptia\b",
+            r"\bsecurity\+\b",
+            r"\bsec\+\b",
+            r"\bcysa\+\b",
+            r"\bpentest\+\b",
+            r"\bcasp\+\b",
+            r"\bsecurityx\b",
+            r"\bnetwork\+\b",
+            r"\blinux\+\b",
+
+            # EC-Council
+            r"\bceh\b",
+            r"\bcertified\s+ethical\s+hacker\b",
+            r"\bceh\s+practical\b",
+            r"\bchfi\b",
+            r"\becsa\b",
+            r"\blpt\b",
+
+            # eLearnSecurity / INE
+            r"\bejpt\b",
+            r"\belearnsecurity\s+junior\s+penetration\s+tester\b",
+            r"\bejptv[1-3]\b",
+            r"\becppt\b",
+            r"\bewpt\b",
+            r"\bewptx\b",
+            r"\becir\b",
+            r"\becdfp\b",
+            r"\bine\s+security\b",
+
+            # OffSec
+            r"\boscp\b",
+            r"\boffsec\b",
+            r"\boffensive\s+security\s+certified\s+professional\b",
+            r"\boswp\b",
+            r"\bosep\b",
+            r"\boswe\b",
+            r"\bosed\b",
+            r"\bosce\b",
+            r"\bosda\b",
+
+            # ISC2 & ISACA
+            r"\bcissp\b",
+            r"\bccsp\b",
+            r"\bsscp\b",
+            r"\bcgrc\b",
+            r"\bcsslp\b",
+            r"\bisc2\s+cc\b",
+            r"\bcism\b",
+            r"\bcisa\b",
+            r"\bcrisc\b",
+
+            # SANS / GIAC
+            r"\bgiac\b",
+            r"\bgsec\b",
+            r"\bgcih\b",
+            r"\bgpen\b",
+            r"\bgcfa\b",
+            r"\bgnfa\b",
+            r"\bgwapt\b",
+            r"\bgrem\b",
+            r"\bgmon\b",
+            r"\bgcpn\b",
+
+            # Red Team / Hands-On
+            r"\bcrto\b",
+            r"\bcertified\s+red\s+team\s+operator\b",
+            r"\bcrte\b",
+            r"\bpaces\b",
+            r"\bbscp\b",
+            r"\bburp\s+suite\s+certified\s+practitioner\b",
+            r"\bpnpt\b",
+            r"\bpjpt\b",
+            r"\bcrtp\b",
+
+            # Cloud Security Certifications
+            r"\baws\s+certified\s+security\b",
+            r"\bazure\s+security\s+engineer\b",
+            r"\baz-500\b",
+            r"\bsc-200\b",
+            r"\bsc-300\b",
+            r"\bsc-900\b",
+            r"\bprofessional\s+cloud\s+security\s+engineer\b",
+
+            # University / Academic Competitive Milestone
+            r"\bgate\b",
+            r"\bpassed\s+the\s+exam\b",
+            r"\bcleared\s+the\s+exam\b",
+            r"\bmaster('s)?\s+degree\b",
+            r"\bphd\b"
+        ]
+        return any(re.search(pat, lower) for pat in competitive_patterns)
+
+    def _is_course_certificate_post(self, text: str) -> bool:
+        """
+        Detects generic online video course completion certificates (Coursera, Udemy,
+        LinkedIn Learning, etc.) which should be avoided from commenting.
+        """
+        lower = text.lower()
+        course_cues = [
+            r"\bcoursera\b",
+            r"\budemy\b",
+            r"\blinkedin\s+learning\b",
+            r"\bedx\b",
+            r"\bpluralsight\b",
+            r"\bskillsoft\b",
+            r"\bsimplilearn\b",
+            r"\bgreat\s+learning\b",
+            r"\bsololearn\b",
+            r"\bdatacamp\b",
+            r"\bcodecademy\b",
+            r"\balison\b",
+            r"\bfuturelearn\b",
+            r"\bfreecodecamp\b",
+            r"\bcertificate\s+of\s+completion\b",
+            r"\bcertificate\s+of\s+attendance\b",
+            r"\bcertificate\s+of\s+participation\b",
+            r"\bcompleted\s+the\s+course\b",
+            r"\bcompleted\s+(a|an)?\s*online\s+course\b",
+            r"\bcompleted\s+the\s+training\b",
+            r"\bfinished\s+the\s+course\b",
+            r"\bcourse\s+certificate\b",
+            r"\bwebinar\s+certificate\b",
+            r"\bmasterclass\s+certificate\b",
+            r"\battended\s+the\s+masterclass\b",
+            r"\bcompleted\s+the\s+bootcamp\b",
+            r"\bbootcamp\s+certificate\b",
+            r"\bcompleted\s+the\s+workshop\b",
+            r"\bworkshop\s+certificate\b",
+            r"\bcourse\s+completed\b"
+        ]
+        return any(re.search(pat, lower) for pat in course_cues)
+
+    def _classify_post_type(self, text: str) -> str:
+        """Categorizes post intent: CAREER_MILESTONE, CERTIFICATION_ACHIEVEMENT, COMPETITIVE_EXAM_OR_CTF, PROJECT_OR_TOOL_LAUNCH, EVENT_OR_WEBINAR, LEADERSHIP_AND_CULTURE, TECHNICAL_OR_INDUSTRY_INSIGHT, GENERAL_PROFESSIONAL."""
+        lower = text.lower()
+
+        # 0. Competitive Certification / CTF
+        if self._is_competitive_cert_or_ctf(text):
+            return "COMPETITIVE_EXAM_OR_CTF"
 
         # 1. Career Milestone (New role, job start, joined as, promotion)
         career_patterns = [
@@ -230,6 +536,81 @@ class PostEvaluator:
                 flags=flags
             )
 
+        # 1. Non-English post check
+        if self._is_non_english(post_content):
+            flags.append("Excluded: Non-English language detected")
+            return PostEvaluation(
+                post_id=post_id,
+                post_type="NON_ENGLISH",
+                is_relevant=False,
+                relevance_score=0.0,
+                sentiment=sentiment,
+                author_credibility=author_credibility,
+                should_like=False,
+                like_reason="Non-English post",
+                should_comment=False,
+                comment_reason="Filtered: Non-English post (English-only engagement enforced)",
+                confidence_score=95.0,
+                flags=flags
+            )
+
+        # 2. LinkedIn Ad / Sponsored post check
+        if self._is_ad_or_sponsored(post_content, author_profile):
+            flags.append("Excluded: LinkedIn Ad / Sponsored promotional post")
+            return PostEvaluation(
+                post_id=post_id,
+                post_type="SPONSORED_OR_AD",
+                is_relevant=False,
+                relevance_score=0.0,
+                sentiment=sentiment,
+                author_credibility=author_credibility,
+                should_like=False,
+                like_reason="Ad / Sponsored post",
+                should_comment=False,
+                comment_reason="Filtered: LinkedIn Ad / Sponsored promotional post",
+                confidence_score=98.0,
+                flags=flags
+            )
+
+        # 3. Hiring / Job vacancy post check
+        if self._is_hiring_post(post_content):
+            flags.append("Excluded: Hiring / Job vacancy post")
+            return PostEvaluation(
+                post_id=post_id,
+                post_type="HIRING_OR_JOB_ALERT",
+                is_relevant=False,
+                relevance_score=0.0,
+                sentiment=sentiment,
+                author_credibility=author_credibility,
+                should_like=True,
+                like_reason="Supportive reaction on job opening",
+                should_comment=False,
+                comment_reason="Filtered: Hiring / job opening post (avoided per user rule)",
+                confidence_score=95.0,
+                flags=flags
+            )
+
+        # 4. Course Certificate vs Competitive Cert / CTF / Practical Exams
+        is_competitive = self._is_competitive_cert_or_ctf(post_content)
+        is_course_cert = self._is_course_certificate_post(post_content)
+
+        if is_course_cert and not is_competitive:
+            flags.append("Excluded: Generic online course completion certificate")
+            return PostEvaluation(
+                post_id=post_id,
+                post_type="COURSE_CERTIFICATE",
+                is_relevant=False,
+                relevance_score=0.0,
+                sentiment=sentiment,
+                author_credibility=author_credibility,
+                should_like=True,
+                like_reason="Supportive reaction for course completion",
+                should_comment=False,
+                comment_reason="Filtered: Generic online course completion certificate (Coursera/Udemy/LinkedIn Learning)",
+                confidence_score=95.0,
+                flags=flags
+            )
+
         # Professional post is eligible for supportive engagement across topics
         is_relevant = True
         relevance_score = max(0.85, relevance_score)
@@ -250,7 +631,12 @@ class PostEvaluator:
         # Angle suggestion tailored to post nature
         lower_content = post_content.lower()
 
-        if post_type == "CAREER_MILESTONE":
+        if is_competitive:
+            post_type = "COMPETITIVE_EXAM_OR_CTF"
+            suggested_angle = "Supportive peer congratulations recognizing competitive exam / CTF milestone"
+            like_reason = "Celebrate competitive exam / CTF accomplishment"
+            comment_reason = "Competitive exam / CTF: supportive peer recognition"
+        elif post_type == "CAREER_MILESTONE":
             suggested_angle = "Warm professional appreciation, congratulations, and wishing high impact in the new role"
             like_reason = "Celebrate career milestone"
             comment_reason = "Career milestone: professional congratulations and encouragement"

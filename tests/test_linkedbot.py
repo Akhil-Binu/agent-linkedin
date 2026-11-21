@@ -66,6 +66,17 @@ class TestCompetitiveCertAndCTFGeneration(unittest.TestCase):
         self.assertTrue(len(comment) > 20)
         self.assertNotIn("\n", comment)
 
+    def test_generates_supportive_comment_for_support_reaction(self):
+        comment, conf, violations = self.generator.generate_comment(
+            post_content="After being laid off, overcoming imposter syndrome and continuing to learn was the hardest part of the journey.",
+            author_profile={"name": "Marcus Kane", "headline": "Security Engineer"},
+            post_type="COMMUNITY_SUPPORT_AND_JOURNEY",
+            reaction_type="SUPPORT"
+        )
+        self.assertNotIn("?", comment)
+        self.assertTrue(len(comment) > 20)
+        self.assertNotIn("\n", comment)
+
 class TestPostEvaluator(unittest.TestCase):
     def setUp(self):
         config = load_config()
@@ -186,6 +197,27 @@ class TestPostEvaluator(unittest.TestCase):
         )
         self.assertTrue(ctf_post.should_comment)
         self.assertEqual(ctf_post.post_type, "COMPETITIVE_EXAM_OR_CTF")
+
+    def test_determines_reaction_types_accurately(self):
+        # CELEBRATE for milestones & exams
+        exam = self.evaluator.analyze_post("t1", "Cleared the eJPT exam today!", {"headline": "Pentester"})
+        self.assertEqual(exam.reaction_type, "CELEBRATE")
+
+        milestone = self.evaluator.analyze_post("t2", "Happy to share that I'm starting a new position as CISO at SentinelOne!", {"headline": "CISO"})
+        self.assertEqual(milestone.reaction_type, "CELEBRATE")
+
+        # SUPPORT for resilience & overcoming obstacles
+        journey = self.evaluator.analyze_post("t3", "After being laid off 3 months ago, the job search struggle was real. But perseverance and continuous learning kept me going.", {"headline": "DevSecOps Engineer"})
+        self.assertEqual(journey.reaction_type, "SUPPORT")
+        self.assertEqual(journey.post_type, "COMMUNITY_SUPPORT_AND_JOURNEY")
+
+        # INSIGHTFUL for technical architecture and CVE analysis
+        tech = self.evaluator.analyze_post("t4", "Deep dive into kernel memory corruption and how eBPF telemetry can mitigate container breakout vulnerabilities.", {"headline": "Security Researcher"})
+        self.assertEqual(tech.reaction_type, "INSIGHTFUL")
+
+        # LOVE for festive celebrations & gratitude
+        festive = self.evaluator.analyze_post("t5", "Wishing everyone a Happy Diwali and prosperous festive season!", {"headline": "Engineer"})
+        self.assertEqual(festive.reaction_type, "LOVE")
 
     def test_rejects_geopolitical_sensitive_post(self):
         geo_post = self.evaluator.analyze_post(

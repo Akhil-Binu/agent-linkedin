@@ -164,7 +164,8 @@ class ContentGenerator:
         post_content: str,
         author_profile: Dict[str, Any],
         suggested_angle: Optional[str] = None,
-        post_type: str = "TECHNICAL_DISCUSSION"
+        post_type: str = "TECHNICAL_DISCUSSION",
+        reaction_type: str = "LIKE"
     ) -> Tuple[str, float, list]:
         """
         Generates a 1-2 sentence tailored comment based on classified post type:
@@ -272,7 +273,7 @@ class ContentGenerator:
                 f"Write a supportive, validating leadership comment (1-2 sentences):"
             )
 
-        elif post_type == "HOLIDAY_OR_CELEBRATION":
+        elif post_type == "HOLIDAY_OR_CELEBRATION" or reaction_type == "LOVE":
             system_prompt = (
                 "You are a warm, courteous professional responding to a colleague's holiday greeting, festival wish (e.g. Diwali, New Year), or celebration post. "
                 "CRITICAL INSTRUCTIONS: "
@@ -285,6 +286,22 @@ class ContentGenerator:
                 f"Author: {author_name}\n"
                 f"Greeting Post:\n\"{cleaned_content}\"\n\n"
                 f"Write a warm, polite holiday/celebration greeting (1-2 sentences):"
+            )
+
+        elif post_type == "COMMUNITY_SUPPORT_AND_JOURNEY" or reaction_type == "SUPPORT":
+            system_prompt = (
+                "You are an empathetic, encouraging professional offering supportive peer validation on a colleague's post about overcoming challenges, learning in public, career pivots, perseverance, or resilience. "
+                "CRITICAL INSTRUCTIONS: "
+                "1. Express genuine peer encouragement and supportive solidarity recognizing the effort and perseverance in their journey. "
+                "2. Base your comment 100% on the specific hurdles or reflections shared in their post text. "
+                "3. STRICTLY NO QUESTIONS. No question marks ('?'). "
+                "4. Keep it strictly 1 to 2 lines (1 to 2 sentences max) in an uplifting, empathetic human tone. "
+                "5. NEVER use generic clichés ('delve', 'testament', 'beacon', 'game-changer', 'stay strong')."
+            )
+            user_prompt = (
+                f"Author: {author_name}\n"
+                f"Journey / Reflection Post:\n\"{cleaned_content}\"\n\n"
+                f"Write an uplifting, supportive peer validation comment (1-2 sentences):"
             )
 
         else:
@@ -401,6 +418,11 @@ class ContentGenerator:
                     comment = f"Eid Mubarak to you and your loved ones! Wishing you peace and happiness{name_ref}."
                 else:
                     comment = f"Wishing you a wonderful celebration and joyful festive season{name_ref}!"
+            elif post_type == "COMMUNITY_SUPPORT_AND_JOURNEY" or reaction_type == "SUPPORT":
+                comment = (
+                    f"Really appreciate you sharing this candid reflection{name_ref}. "
+                    "Navigating those transitions and staying committed through the learning curve requires genuine resilience, and your experience offers great encouragement to the community."
+                )
             # Software / Code / Development
             elif re.search(r'\b(code|coding|software|python|rust|javascript|typescript|golang|react|api|git)\b', lower):
                 comment = (
@@ -459,7 +481,9 @@ class ContentGenerator:
 
         # Run through tone & anti-slop verification
         is_valid, violations, penalty = self.anti_slop.evaluate_comment_tone(comment, post_type=post_type)
-        base_confidence = 94.0 if post_type in ["CAREER_MILESTONE", "CERTIFICATION_ACHIEVEMENT", "COMPETITIVE_EXAM_OR_CTF"] else 92.0
+        base_confidence = 94.0 if post_type in [
+            "CAREER_MILESTONE", "CERTIFICATION_ACHIEVEMENT", "COMPETITIVE_EXAM_OR_CTF", "COMMUNITY_SUPPORT_AND_JOURNEY"
+        ] else 92.0
         final_confidence = max(10.0, base_confidence - penalty)
 
         return comment, round(final_confidence, 1), violations

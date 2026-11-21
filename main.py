@@ -132,12 +132,12 @@ class LinkedBotAgent:
 
                 # 1. Evaluate post classification and relevance based on post nature
                 eval_result = self.evaluator.analyze_post(post_id, content, author)
-                print(f"   🏷️ Nature: [{eval_result.post_type}] | Sentiment: {eval_result.sentiment}")
+                print(f"   🏷️ Nature: [{eval_result.post_type}] | Sentiment: {eval_result.sentiment} | Reaction: [{eval_result.reaction_type}]")
 
                 # 2. React to every post encountered on scroll
                 can_like, l_msg = self.rate_limiter.can_perform("likes")
                 if can_like:
-                    reaction = "CELEBRATE" if eval_result.post_type in ["CAREER_MILESTONE", "CERTIFICATION_ACHIEVEMENT"] else "LIKE"
+                    reaction = eval_result.reaction_type
                     res_like = self.connector.like_post(post_id, reaction_type=reaction) if hasattr(self.connector, "like_post") else {}
                     if res_like.get("status") == "success":
                         self.rate_limiter.record_action("likes")
@@ -157,9 +157,13 @@ class LinkedBotAgent:
                         can_comment, c_msg = self.rate_limiter.can_perform("comments")
                         if can_comment:
                             comment, confidence, violations = self.generator.generate_comment(
-                                content, author, eval_result.suggested_angle, post_type=eval_result.post_type
+                                content,
+                                author,
+                                eval_result.suggested_angle,
+                                post_type=eval_result.post_type,
+                                reaction_type=eval_result.reaction_type
                             )
-                            print(f"\n   💬 Submitting Supportive Appreciation ({eval_result.post_type}, Confidence: {confidence}%):")
+                            print(f"\n   💬 Submitting Supportive Appreciation ({eval_result.post_type} | {eval_result.reaction_type}, Confidence: {confidence}%):")
                             print(f"      \"{comment}\"")
 
                             res_c = self.connector.comment_post(post_id, comment)

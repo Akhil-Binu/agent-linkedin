@@ -12,6 +12,7 @@ class PostEvaluation(BaseModel):
     author_credibility: str # "high", "peer", "potential_client", "unknown", "spammer"
     should_like: bool
     like_reason: str
+    reaction_type: str = "LIKE" # "LIKE", "CELEBRATE", "SUPPORT", "INSIGHTFUL", "LOVE"
     should_comment: bool
     comment_reason: str
     confidence_score: float # 0 - 100
@@ -476,6 +477,49 @@ class PostEvaluator:
 
         return "GENERAL_PROFESSIONAL"
 
+    def _determine_reaction_type(self, post_type: str, text: str) -> str:
+        """
+        Determines the optimal LinkedIn reaction based on post nature:
+        - CELEBRATE: Career milestones, certifications, competitive exams (CEH, CompTIA, eJPT), CTFs.
+        - SUPPORT: Overcoming setbacks, learning journeys, career shifts, mentorship, resilience, mental health.
+        - INSIGHTFUL: Deep technical architecture, security analysis, CVE breakdowns, tool launches.
+        - LOVE: Festive greetings (Diwali, New Year, etc.), heartfelt gratitude, team praise.
+        - LIKE: General industry commentary, news, professional updates.
+        """
+        lower = text.lower()
+
+        # 1. CELEBRATE for accomplishments, exams, certs, CTFs, career advances
+        if post_type in ["CAREER_MILESTONE", "CERTIFICATION_ACHIEVEMENT", "COMPETITIVE_EXAM_OR_CTF"]:
+            return "CELEBRATE"
+
+        # 2. LOVE for festive celebrations or heartfelt gratitude/tributes
+        if post_type == "HOLIDAY_OR_CELEBRATION" or any(w in lower for w in [
+            "happy diwali", "happy new year", "merry christmas", "eid mubarak",
+            "so grateful", "deep gratitude", "heartfelt thank", "thank you to my mentor",
+            "celebrating my team", "shoutout to my team"
+        ]):
+            return "LOVE"
+
+        # 3. SUPPORT for learning in public, overcoming obstacles, career pivots, resilience, burnout
+        support_patterns = [
+            r"\b(struggle|struggled|struggling|burnout|mental\s+health|laid\s+off|job\s+loss|rejection|career\s+pivot|career\s+transition|non-tech\s+to\s+tech|imposter\s+syndrome|failure|lessons\s+learned\s+from\s+failing|perseverance|resilience|never\s+give\s+up|journey\s+wasn't\s+easy|keep\s+going|tough\s+journey)\b"
+        ]
+        if any(re.search(p, lower) for p in support_patterns):
+            return "SUPPORT"
+
+        # 4. INSIGHTFUL for technical architecture, vulnerability disclosures, tools, system design
+        if post_type in ["TECHNICAL_OR_INDUSTRY_INSIGHT", "PROJECT_OR_TOOL_LAUNCH"]:
+            return "INSIGHTFUL"
+
+        tech_patterns = [
+            r"\b(architecture|vulnerability|cve|zero\s+trust|least\s+privilege|iam|devsecops|system\s+design|threat\s+modeling|reverse\s+engineering|kernel|api\s+security|telemetry|detection\s+rule|observability|brotli|rce)\b"
+        ]
+        if any(re.search(p, lower) for p in tech_patterns):
+            return "INSIGHTFUL"
+
+        # 5. Default professional reaction
+        return "LIKE"
+
     def analyze_post(self, post_id: str, post_content: str, author_profile: Dict[str, Any]) -> PostEvaluation:
         flags = []
         sentiment = self._assess_sentiment(post_content)
@@ -664,6 +708,14 @@ class PostEvaluator:
             suggested_angle = "Appreciative peer validation directly addressing the author's specific topic"
             comment_reason = "Professional insight: supportive peer appreciation"
 
+        # Dynamically determine the matching LinkedIn reaction
+        reaction_type = self._determine_reaction_type(post_type, post_content)
+        if reaction_type == "SUPPORT" and post_type in ["GENERAL_PROFESSIONAL", "LEADERSHIP_AND_CULTURE"]:
+            post_type = "COMMUNITY_SUPPORT_AND_JOURNEY"
+            suggested_angle = "Empathetic, encouraging peer affirmation validating resilience, learning, and growth"
+            like_reason = "Support colleague through learning journey and challenges"
+            comment_reason = "Supportive peer encouragement on learning journey"
+
         return PostEvaluation(
             post_id=post_id,
             post_type=post_type,
@@ -673,6 +725,7 @@ class PostEvaluator:
             author_credibility=author_credibility,
             should_like=should_like,
             like_reason=like_reason,
+            reaction_type=reaction_type,
             should_comment=should_comment,
             comment_reason=comment_reason,
             confidence_score=round(confidence_score, 1),

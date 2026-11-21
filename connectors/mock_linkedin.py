@@ -255,8 +255,8 @@ class MockLinkedInConnector(LinkedInConnectorBase):
             return {"status": "error", "error_code": 429, "message": "Rate limit exceeded"}
 
         self.liked_posts.append(post_id)
-        logger.info(f"[MockLinkedIn] Successfully liked post: {post_id}")
-        return {"status": "success", "post_id": post_id, "action": "LIKE"}
+        logger.info(f"[MockLinkedIn] Successfully reacted ({reaction_type}) to post: {post_id}")
+        return {"status": "success", "post_id": post_id, "action": reaction_type, "reaction": reaction_type}
 
     def comment_post(self, post_id: str, comment_text: str) -> Dict[str, Any]:
         if self.simulate_rate_limit:

@@ -417,16 +417,68 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
         """
         Locates the Reaction button STRICTLY inside the matching post card.
         Guarantees reactions are applied properly to the card.
-        Supports reaction_type: 'LIKE' or 'CELEBRATE'.
+        Supports reaction_type: 'LIKE', 'CELEBRATE', 'SUPPORT', 'LOVE', 'INSIGHTFUL', 'FUNNY'.
         """
         self._ensure_browser()
+        req_reaction = reaction_type.upper()
         try:
-            clicked = self.page.evaluate('''(args) => {
-                const { targetId, reqReaction } = args;
+            # 1. Check if card is already reacted to
+            is_already = self.page.evaluate('''(targetId) => {
                 const card = document.querySelector(`[data-lb-id='${targetId}'], [data-urn='${targetId}'], [data-id='${targetId}']`);
-                if (!card) {
-                    return { success: false, reason: `Card [${targetId}] not found in DOM` };
+                if (!card) return { found: false };
+                let likeBtn = card.querySelector("button[aria-label*='Reaction button state'], button[aria-label*='React'], button[aria-label*='Reaction']");
+                if (!likeBtn) {
+                    const allBtns = Array.from(card.querySelectorAll("button"));
+                    likeBtn = allBtns.find(b => {
+                        const aria = (b.getAttribute("aria-label") || "").toLowerCase();
+                        return aria.includes("reaction button state") || aria.includes("react") || aria.includes("like");
+                    });
                 }
+                if (!likeBtn) return { found: false };
+                const aria = (likeBtn.getAttribute("aria-label") || "").toLowerCase();
+                const isReacted = !aria.includes("no reaction") && (
+                    aria.includes("like") || aria.includes("celebrate") || aria.includes("support") || aria.includes("reaction") || aria.includes("insightful") || aria.includes("love")
+                );
+                return { found: true, already: isReacted };
+            }''', post_id)
+
+            if is_already.get("already"):
+                logger.info(f"ℹ️ Post [{post_id}] was already reacted to. Preserving reaction.")
+                return {"status": "already_reacted", "post_id": post_id, "reaction": reaction_type}
+
+            # 2. If specialized reaction requested, attempt to hover over the button to reveal reaction tray
+            if req_reaction != "LIKE":
+                try:
+                    btn_loc = self.page.locator(
+                        f"[data-lb-id='{post_id}'] button[aria-label*='Reaction button state'], "
+                        f"[data-lb-id='{post_id}'] button[aria-label*='React'], "
+                        f"[data-urn='{post_id}'] button[aria-label*='Reaction button state'], "
+                        f"[data-urn='{post_id}'] button[aria-label*='React'], "
+                        f"[data-id='{post_id}'] button[aria-label*='React']"
+                    ).first
+
+                    if btn_loc.is_visible():
+                        btn_loc.scroll_into_view_if_needed()
+                        btn_loc.hover()
+                        self._human_delay(0.6, 1.0)
+
+                        target_loc = self.page.locator(
+                            f"button[aria-label*='{req_reaction.title()}'], "
+                            f"button[data-test-reactions-type*='{req_reaction}']"
+                        ).first
+
+                        if target_loc.is_visible():
+                            target_loc.click()
+                            self._human_delay(1.5, 3.0)
+                            logger.info(f"🎉 [REAL REACTION] Successfully applied {req_reaction} reaction to card [{post_id}]")
+                            return {"status": "success", "post_id": post_id, "reaction": req_reaction}
+                except Exception as ex:
+                    logger.debug(f"Reaction tray selection fell back to direct click: {ex}")
+
+            # 3. Direct click fallback on Reaction button
+            clicked = self.page.evaluate('''(targetId) => {
+                const card = document.querySelector(`[data-lb-id='${targetId}'], [data-urn='${targetId}'], [data-id='${targetId}']`);
+                if (!card) return { success: false, reason: `Card [${targetId}] not found in DOM` };
 
                 let likeBtn = card.querySelector("button[aria-label*='Reaction button state'], button[aria-label*='React'], button[aria-label*='Reaction']");
                 if (!likeBtn) {
@@ -436,33 +488,17 @@ class PlaywrightLinkedInConnector(LinkedInConnectorBase):
                         return aria.includes("reaction button state") || aria.includes("react") || aria.includes("like");
                     });
                 }
-
-                if (!likeBtn) {
-                    return { success: false, reason: "Reaction button not found in card" };
-                }
-
-                const aria = (likeBtn.getAttribute("aria-label") || "").toLowerCase();
-                const isReacted = !aria.includes("no reaction") && (
-                    aria.includes("like") || aria.includes("celebrate") || aria.includes("support") || aria.includes("reaction") || aria.includes("insightful")
-                );
-
-                if (isReacted) {
-                    return { success: true, status: "already_reacted" };
-                }
+                if (!likeBtn) return { success: false, reason: "Reaction button not found in card" };
 
                 likeBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 likeBtn.click();
                 return { success: true, status: "reacted" };
-            }''', {"targetId": post_id, "reqReaction": reaction_type.upper()})
+            }''', post_id)
 
             if clicked.get("success"):
-                reaction_state = clicked.get("status", "reacted")
-                if reaction_state == "already_reacted":
-                    logger.info(f"ℹ️ Post [{post_id}] was already reacted to. Preserving reaction.")
-                    return {"status": "already_reacted", "post_id": post_id, "reaction": reaction_type}
                 self._human_delay(1.5, 3.0)
-                logger.info(f"👍 [REAL REACTION] Reacted to card [{post_id}] ({reaction_state})")
-                return {"status": "success", "post_id": post_id, "reaction": reaction_type}
+                logger.info(f"👍 [REAL REACTION] Reacted to card [{post_id}] ({req_reaction})")
+                return {"status": "success", "post_id": post_id, "reaction": req_reaction}
             else:
                 logger.debug(f"Could not react to post [{post_id}]: {clicked.get('reason')}")
                 return {"status": "error", "message": clicked.get("reason")}
